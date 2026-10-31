@@ -1,0 +1,18 @@
+{
+  "name": "coursemate",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A course-taking study agent: watches the screen, listens to the lecture, remembers the course, and drafts answers and essays in your own voice.",
+  "engines": {
+    "node": ">=22.5"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test tests/*.test.mjs",
+    "study": "node scripts/study.mjs",
+    "live-check": "node scripts/live-check.mjs"
+  },
+  "dependencies": {}
+}

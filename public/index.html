@@ -1,0 +1,463 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>CourseMate — capture desk</title>
+<style>
+  :root{
+    --bg:#0e1014; --panel:#161a21; --panel-2:#1d222b; --line:#2a313d;
+    --ink:#e8ecf3; --dim:#8b95a6; --accent:#6ba8ff; --good:#4ec98a; --warn:#f0b64d; --bad:#f0705f;
+    --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif}
+  header{display:flex;gap:12px;align-items:center;padding:14px 18px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg);z-index:10;flex-wrap:wrap}
+  h1{font-size:16px;margin:0;letter-spacing:.2px}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--dim);flex:none}
+  .dot.live{background:var(--good);box-shadow:0 0 10px var(--good)}
+  .dot.err{background:var(--bad)}
+  .spacer{flex:1}
+  main{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:0;min-height:calc(100vh - 56px)}
+  @media (max-width:900px){main{grid-template-columns:1fr}}
+  .col{padding:18px;min-width:0}
+  .side{border-left:1px solid var(--line);background:var(--panel)}
+  @media (max-width:900px){.side{border-left:0;border-top:1px solid var(--line)}}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  input,select,textarea{background:var(--panel-2);color:var(--ink);border:1px solid var(--line);border-radius:9px;padding:9px 11px;font:inherit;outline:none;min-width:0}
+  input:focus,textarea:focus{border-color:var(--accent)}
+  button{background:var(--panel-2);color:var(--ink);border:1px solid var(--line);border-radius:9px;padding:9px 14px;font:inherit;font-weight:500;cursor:pointer}
+  button:hover{border-color:var(--accent)}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#08111f;font-weight:650}
+  button.ghost{background:transparent}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:14px 16px;margin-bottom:12px}
+  .card h3{margin:0 0 6px;font-size:14px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .tag{font:11px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;padding:4px 7px;border-radius:6px;background:var(--panel-2);color:var(--dim);border:1px solid var(--line)}
+  .tag.quiz{color:var(--accent);border-color:#2b4a7a}
+  .tag.essay{color:#c79bff;border-color:#4a3a6a}
+  .tag.note{color:var(--good);border-color:#2c5040}
+  .tag.error{color:var(--bad);border-color:#5a2f2c}
+  .answer{font-size:19px;font-weight:600;margin:8px 0;line-height:1.4}
+  .work{color:var(--dim);font-size:13.5px}
+  .prose{white-space:pre-wrap;background:var(--panel-2);border:1px solid var(--line);border-radius:9px;padding:12px;max-height:340px;overflow:auto;font-size:14px}
+  .conf{font:12px/1 var(--mono);padding:3px 6px;border-radius:5px}
+  .conf.hi{color:var(--good)} .conf.mid{color:var(--warn)} .conf.lo{color:var(--bad)}
+  .log{font:12px/1.5 var(--mono);color:var(--dim);max-height:150px;overflow:auto;background:#0b0d11;border:1px solid var(--line);border-radius:9px;padding:9px}
+  .muted{color:var(--dim);font-size:13px}
+  .stat{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--line);font-size:13px}
+  .lesson{font-size:13px;padding:7px 0;border-bottom:1px solid var(--line)}
+  .lesson b{font:10px/1 var(--mono);text-transform:uppercase;color:var(--accent);margin-right:6px}
+  .empty{color:var(--dim);font-size:13.5px;padding:14px 0;text-align:center}
+  .thumb{width:100%;border-radius:9px;border:1px solid var(--line);margin-top:8px;display:none}
+  .err-box{color:var(--bad);font-size:13px;margin-top:8px}
+</style>
+</head>
+<body>
+<header>
+  <span class="dot" id="dot"></span>
+  <h1>CourseMate</h1>
+  <span class="muted" id="hdr">not connected</span>
+  <div class="spacer"></div>
+  <button id="btnShare" class="primary">Share screen</button>
+  <button id="btnMic">Mic</button>
+  <button id="btnStop" class="ghost" disabled>Stop</button>
+</header>
+
+<main>
+  <section class="col">
+    <div class="card">
+      <div class="row">
+        <input id="course" placeholder="Course — e.g. BIOL 201 Cell Biology" style="flex:1;min-width:220px">
+        <select id="interval">
+          <option value="4000">every 4s</option>
+          <option value="2500" selected>every 2.5s</option>
+          <option value="1500">every 1.5s</option>
+        </select>
+        <button id="btnStart">Start session</button>
+      </div>
+      <div class="err-box" id="setupErr"></div>
+      <div class="muted" style="margin-top:10px">
+        Pick the tab, window or screen showing your course. Everything the agent decides appears below —
+        it shows you the answer, it never submits for you.
+      </div>
+      <video id="preview" muted playsinline style="display:none"></video>
+    </div>
+
+    <div class="card">
+      <div class="row" style="justify-content:space-between">
+        <h3 style="margin:0">Desk</h3>
+        <span class="muted" id="deskCount">0 decisions</span>
+      </div>
+      <div id="desk"><div class="empty">Start a session and share your screen.</div></div>
+    </div>
+  </section>
+
+  <aside class="col side">
+    <div class="card">
+      <h3>Ask about this course</h3>
+      <textarea id="askQ" rows="2" placeholder="What's likely on the midterm?" style="width:100%;margin-bottom:8px"></textarea>
+      <button id="btnAsk" style="width:100%">Ask</button>
+      <div id="askA" class="prose" style="display:none;margin-top:10px"></div>
+    </div>
+
+    <div class="card">
+      <div class="row" style="justify-content:space-between">
+        <h3 style="margin:0">Self-evolution</h3>
+        <span style="display:flex;gap:6px">
+          <button id="btnStudy" style="padding:5px 10px;font-size:13px">Study pack</button>
+          <button id="btnReflect" style="padding:5px 10px;font-size:13px">Reflect</button>
+        </span>
+      </div>
+      <div id="stats"></div>
+      <div id="lessons" style="margin-top:10px"></div>
+    </div>
+
+    <div class="card">
+      <h3>Activity</h3>
+      <div class="log" id="log"></div>
+    </div>
+  </aside>
+</main>
+
+<script>
+'use strict';
+const $ = (id) => document.getElementById(id);
+const state = { sessionId: null, course: '', display: null, audioStream: null, recorder: null, timer: null, lastHash: null, busy: false, micOn: false, micStream: null, decisions: 0 };
+
+function logLine(msg) {
+  const el = $('log');
+  const t = new Date().toLocaleTimeString();
+  el.textContent = `${t}  ${msg}\n` + el.textContent;
+}
+function setStatus(kind, text) {
+  $('dot').className = 'dot' + (kind ? ' ' + kind : '');
+  $('hdr').textContent = text;
+}
+async function post(path, body) {
+  const res = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body || {}),
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
+  return res.json();
+}
+
+// 8x8 average hash — lets us skip screens that have not changed at all.
+function averageHash(video) {
+  const c = document.createElement('canvas');
+  c.width = 8; c.height = 8;
+  const x = c.getContext('2d', { willReadFrequently: true });
+  x.drawImage(video, 0, 0, 8, 8);
+  const d = x.getImageData(0, 0, 8, 8).data;
+  const grey = []; let sum = 0;
+  for (let i = 0; i < d.length; i += 4) {
+    const v = d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114;
+    grey.push(v); sum += v;
+  }
+  const avg = sum / grey.length;
+  let hex = '';
+  for (let i = 0; i < 64; i += 4) {
+    let nib = 0;
+    for (let j = 0; j < 4; j++) if (grey[i + j] > avg) nib |= 1 << j;
+    hex += nib.toString(16);
+  }
+  return hex;
+}
+const hamming = (a, b) => {
+  if (!a || !b || a.length !== b.length) return 99;
+  let n = 0;
+  for (let i = 0; i < a.length; i++) { let v = parseInt(a[i], 16) ^ parseInt(b[i], 16); while (v) { n += v & 1; v >>= 1; } }
+  return n;
+};
+
+function grabFrame() {
+  const v = $('preview');
+  if (!v.videoWidth) return null;
+  const scale = Math.min(1, 1280 / v.videoWidth);
+  const c = document.createElement('canvas');
+  c.width = Math.round(v.videoWidth * scale);
+  c.height = Math.round(v.videoHeight * scale);
+  c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+  return c.toDataURL('image/jpeg', 0.72);
+}
+
+async function tick() {
+  if (state.busy || !state.sessionId) return;
+  const v = $('preview');
+  if (!v.videoWidth) return;
+  try {
+    const hash = averageHash(v);
+    if (state.lastHash && hamming(hash, state.lastHash) <= 2) return; // same screen
+    state.lastHash = hash;
+    const dataUrl = grabFrame();
+    if (!dataUrl) return;
+    state.busy = true;
+    const b64 = dataUrl.split(',')[1];
+    const out = await post('/api/ingest/frame', { session_id: state.sessionId, image_b64: b64, mime: 'image/jpeg', hash });
+    renderDecision(out.decision, out.observation);
+  } catch (e) {
+    logLine('frame error: ' + e.message);
+  } finally {
+    state.busy = false;
+  }
+}
+
+function confClass(c) { return c >= 0.75 ? 'hi' : c >= 0.5 ? 'mid' : 'lo'; }
+
+function renderDecision(dec, obs) {
+  state.decisions++;
+  $('deskCount').textContent = `${state.decisions} decision${state.decisions === 1 ? '' : 's'}`;
+  const desk = $('desk');
+  if (desk.querySelector('.empty')) desk.innerHTML = '';
+
+  const card = document.createElement('div');
+  card.className = 'card';
+  const p = dec.payload || {};
+  const conf = (dec.confidence ?? 0);
+  const tagMap = { quiz_answer: 'quiz', essay: 'essay', note: 'note', error: 'error', observation: 'other' };
+  const tagCls = tagMap[dec.kind] || 'other';
+
+  let inner = `<h3><span class="tag ${tagCls}">${p.screen_type || dec.kind}</span>
+      <span class="conf ${confClass(conf)}">${Math.round(conf * 100)}%</span>
+      ${dec.needs_human ? '<span class="tag" style="color:var(--warn);border-color:#5a4a2c">needs you</span>' : ''}
+      <span class="muted" style="font-weight:400">${p.topic ? escapeHtml(p.topic) : ''}</span></h3>`;
+
+  if (dec.kind === 'quiz_answer') {
+    const q = p.question || {};
+    inner += `<div class="work">${escapeHtml(q.stem || '')}</div>`;
+    if (Array.isArray(q.options) && q.options.length) {
+      inner += '<div style="margin:8px 0">' + q.options.map((o, i) =>
+        `<div style="padding:5px 9px;border-radius:7px;margin:3px 0;${i === p.chosen_index ? 'background:#1c3a2c;border:1px solid #2c6b4b' : 'border:1px solid transparent;color:var(--dim)'}">${escapeHtml(o)}</div>`
+      ).join('') + '</div>';
+    }
+    if (typeof p.chosen_index !== 'number' && p.answer_text) inner += `<div class="answer">${escapeHtml(p.answer_text)}</div>`;
+    if (p.work) inner += `<div class="work">${escapeHtml(p.work)}</div>`;
+    inner += `<div class="row" style="margin-top:10px">
+        <button data-ok="1" data-id="${dec.id}">Correct</button>
+        <button data-ok="0" data-id="${dec.id}" class="ghost">Wrong</button>
+      </div>`;
+  } else if (dec.kind === 'essay') {
+    inner += `<h3 style="font-size:15px;margin:6px 0">${escapeHtml(p.title || '')}</h3>`;
+    inner += `<div class="work" style="margin-bottom:8px">${escapeHtml(p.thesis || '')}</div>`;
+    inner += `<div class="prose">${escapeHtml(p.prose || '')}</div>`;
+    inner += `<div class="muted" style="margin-top:7px">${p.word_count || 0} words${p.target_words ? ` (target ${p.target_words})` : ''}</div>`;
+    if (p.citations && p.citations.length) inner += `<div class="work" style="margin-top:7px">From the lecture: ${p.citations.map(escapeHtml).join(' · ')}</div>`;
+    inner += `<div class="row" style="margin-top:10px"><button data-copy="${dec.id}">Copy essay</button></div>`;
+  } else if (dec.kind === 'note') {
+    inner += `<div>${escapeHtml(p.summary || '')}</div>`;
+    if (p.key_terms && p.key_terms.length) inner += `<div class="work" style="margin-top:6px">${p.key_terms.map(escapeHtml).join(' · ')}</div>`;
+    if (p.stored) inner += `<div class="muted" style="margin-top:4px">saved ${p.fact_count} fact(s) to memory</div>`;
+  } else if (dec.kind === 'error') {
+    inner += `<div class="work">${escapeHtml(p.error || 'unknown error')}</div>`;
+  } else {
+    inner += `<div class="work">${escapeHtml(p.note || p.summary || 'Observed.')}</div>`;
+  }
+
+  card.innerHTML = inner;
+  card.dataset.payload = JSON.stringify(p);
+  desk.prepend(card);
+
+  card.querySelectorAll('[data-ok]').forEach((b) => b.addEventListener('click', async () => {
+    const ok = b.dataset.ok === '1';
+    let truth = '';
+    if (!ok) truth = prompt('What was the right answer? (optional, but this is how it learns)') || '';
+    try {
+      await post('/api/correct', { decision_id: b.dataset.id, correct: ok, truth });
+      logLine(ok ? 'marked correct' : 'marked wrong — lesson recorded');
+      refreshMe();
+    } catch (e) { logLine('correction failed: ' + e.message); }
+  }));
+  const copyBtn = card.querySelector('[data-copy]');
+  if (copyBtn) copyBtn.addEventListener('click', () => {
+    navigator.clipboard.writeText(card.dataset.payload ? JSON.parse(card.dataset.payload).prose : '');
+    copyBtn.textContent = 'Copied';
+  });
+}
+
+const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+async function startSession() {
+  const course = $('course').value.trim();
+  if (!course) { $('setupErr').textContent = 'Name the course first — it keys the memory.'; return; }
+  $('setupErr').textContent = '';
+  try {
+    const out = await post('/api/session', { course });
+    state.sessionId = out.session_id;
+    state.course = course;
+    state.decisions = 0;
+    $('desk').innerHTML = '<div class="empty">Watching. Decisions appear here.</div>';
+    logLine(`session ${out.session_id} — ${course}`);
+    setStatus('live', course);
+    refreshMe();
+    return true;
+  } catch (e) {
+    $('setupErr').textContent = e.message;
+    return false;
+  }
+}
+
+async function shareScreen() {
+  if (!state.sessionId && !(await startSession())) return;
+  try {
+    const stream = await navigator.mediaDevices.getDisplayMedia({
+      video: { frameRate: 2, width: { ideal: 1920 } },
+      audio: true,
+    });
+    state.display = stream;
+    $('preview').srcObject = stream;
+    await $('preview').play().catch(() => {});
+    stream.getVideoTracks()[0].addEventListener('ended', stopAll);
+
+    const audioTracks = [...stream.getAudioTracks()];
+    if (audioTracks.length) { startRecording(audioTracks); logLine('capturing tab audio'); }
+    else logLine('no tab audio shared — use Mic for the room, or tick "share audio" in the picker');
+
+    clearInterval(state.timer);
+    state.timer = setInterval(tick, Number($('interval').value));
+    tick();
+    $('btnStop').disabled = false;
+    $('btnShare').disabled = true;
+    logLine('screen capture started');
+  } catch (e) {
+    $('setupErr').textContent = 'Screen share cancelled or blocked: ' + e.message;
+  }
+}
+
+async function toggleMic() {
+  if (!state.sessionId && !(await startSession())) return;
+  if (state.micOn) {
+    state.micStream?.getTracks().forEach((t) => t.stop());
+    state.micStream = null;
+    state.micOn = false;
+    $('btnMic').classList.remove('primary');
+    logLine('mic off');
+    return;
+  }
+  try {
+    state.micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+    state.micOn = true;
+    $('btnMic').classList.add('primary');
+    startRecording(state.micStream.getAudioTracks());
+    logLine('mic on');
+  } catch (e) {
+    logLine('mic denied: ' + e.message);
+  }
+}
+
+function startRecording(tracks) {
+  state.recorder?.stop();
+  const combined = new MediaStream(tracks);
+  const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm';
+  const rec = new MediaRecorder(combined, { mimeType: mime, audioBitsPerSecond: 32000 });
+  rec.ondataavailable = async (ev) => {
+    if (!ev.data || ev.data.size < 2500 || !state.sessionId) return;
+    const buf = await ev.data.arrayBuffer();
+    const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
+    try {
+      const out = await post('/api/ingest/audio', { session_id: state.sessionId, audio_b64: b64, mime: 'audio/webm' });
+      if (out.transcript) logLine('heard: ' + out.transcript.slice(0, 90));
+    } catch (e) { logLine('audio error: ' + e.message); }
+  };
+  rec.start(12000);
+  state.recorder = rec;
+}
+
+function stopAll() {
+  clearInterval(state.timer);
+  state.timer = null;
+  state.recorder?.stop();
+  state.recorder = null;
+  state.display?.getTracks().forEach((t) => t.stop());
+  state.micStream?.getTracks().forEach((t) => t.stop());
+  state.display = null; state.micStream = null; state.micOn = false; state.lastHash = null;
+  $('preview').srcObject = null;
+  $('btnShare').disabled = false;
+  $('btnStop').disabled = true;
+  $('btnMic').classList.remove('primary');
+  setStatus('', 'stopped');
+  logLine('stopped');
+}
+
+async function refreshMe() {
+  if (!state.course) return;
+  try {
+    const me = await fetch('/api/me?course=' + encodeURIComponent(state.course)).then((r) => r.json());
+    const stats = me.stats.filter((s) => s.graded > 0);
+    $('stats').innerHTML = stats.length
+      ? stats.map((s) => `<div class="stat"><span>${escapeHtml(s.screen_type)}</span><span>${Math.round(s.accuracy * 100)}% of ${s.graded}</span></div>`).join('')
+      : `<div class="muted">No graded decisions yet. Mark answers correct/wrong and it starts tuning itself.</div>`;
+    $('lessons').innerHTML = me.lessons.length
+      ? me.lessons.map((l) => `<div class="lesson"><b>${escapeHtml(l.scope)}</b>${escapeHtml(l.text)}</div>`).join('')
+      : '<div class="muted" style="margin-top:8px">No lessons yet.</div>';
+  } catch { /* dashboard is best-effort */ }
+}
+
+async function reflectNow() {
+  if (!state.course) { $('setupErr').textContent = 'Start a session first.'; return; }
+  $('btnReflect').disabled = true;
+  try {
+    const out = await post('/api/reflect', { course: state.course, session_id: state.sessionId });
+    logLine(`reflected: ${out.lessons?.length || 0} new lesson(s)`);
+    await refreshMe();
+  } catch (e) { logLine('reflect failed: ' + e.message); }
+  finally { $('btnReflect').disabled = false; }
+}
+
+async function studyPack() {
+  if (!state.course) { $('setupErr').textContent = 'Start a session first.'; return; }
+  $('btnStudy').disabled = true;
+  try {
+    const out = await post('/api/study', { course: state.course, session_id: state.sessionId });
+    if (out.degraded) logLine('study pack built without a model — summary missing');
+    const blob = new Blob([out.markdown], { type: 'text/markdown' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = (state.course.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'course') + '-study.md';
+    a.click();
+    URL.revokeObjectURL(a.href);
+    logLine(`study pack: ${out.flashcards.length} flashcards, ${out.key_terms.length} terms, ${out.likely_exam.length} exam questions`);
+  } catch (e) { logLine('study pack failed: ' + e.message); }
+  finally { $('btnStudy').disabled = false; }
+}
+
+async function ask() {
+  const question = $('askQ').value.trim();
+  if (!question || !state.course) return;
+  $('btnAsk').disabled = true;
+  $('askA').style.display = 'block';
+  $('askA').textContent = 'thinking…';
+  try {
+    const out = await post('/api/ask', { course: state.course, question, session_id: state.sessionId });
+    $('askA').textContent = out.answer;
+  } catch (e) { $('askA').textContent = 'error: ' + e.message; }
+  finally { $('btnAsk').disabled = false; }
+}
+
+$('btnStart').addEventListener('click', startSession);
+$('btnShare').addEventListener('click', shareScreen);
+$('btnMic').addEventListener('click', toggleMic);
+$('btnStop').addEventListener('click', stopAll);
+$('btnReflect').addEventListener('click', reflectNow);
+$('btnStudy').addEventListener('click', studyPack);
+$('btnAsk').addEventListener('click', ask);
+$('interval').addEventListener('change', () => { if (state.timer) { clearInterval(state.timer); state.timer = setInterval(tick, Number($('interval').value)); } });
+
+(async function boot() {
+  try {
+    const h = await fetch('/api/health').then((r) => r.json());
+    setStatus(h.gateway?.key_configured ? 'live' : '', h.gateway?.key_configured ? `gateway ${h.gateway.model}` : 'gateway: no key');
+    logLine(`ready — ${h.counters?.decisions || 0} decisions remembered`);
+    if (!('getDisplayMedia' in navigator.mediaDevices)) {
+      setStatus('err', 'this browser cannot capture the screen');
+      $('setupErr').textContent = 'Screen capture is unavailable here. On iPhone/iPad use the ReplayKit path; on Android use scrcpy or the MediaProjection app. See capture/README.md.';
+    }
+  } catch (e) {
+    setStatus('err', 'server unreachable');
+    $('setupErr').textContent = 'Cannot reach the CourseMate server: ' + e.message;
+  }
+})();
+</script>
+</body>
+</html>

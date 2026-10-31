@@ -1,0 +1,18 @@
+node_modules/
+data/
+*.db
+*.db-shm
+*.db-wal
+
+# Secrets. The gateway key and any APNs provider key live here and must never be
+# committed.
+.env
+env.local
+*.p8
+AuthKey_*.p8
+
+# A hand-edited persona is a local voice, not part of the tool.
+persona.local.json
+
+.DS_Store
+*.log

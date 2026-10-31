@@ -1,0 +1,333 @@
+import { createServer as createHttpServer } from 'node:http';
+import { readFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { join, extname, normalize } from 'node:path';
+import { ROOT, ensureDirs } from './config.js';
+import { openStore } from './store.js';
+import { makeGateway } from './gateway.js';
+import { makeBrain } from './brain.js';
+import { makePersonaSource, applyDrift } from './persona.js';
+import { makeStudy } from './study.js';
+import { log, warn, nowIso } from './util.js';
+
+const PUBLIC_DIR = join(ROOT, 'public');
+const MAX_BODY = 16 * 1024 * 1024; // a 1600x900 JPEG is well under this
+
+const MIME = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.ico': 'image/x-icon',
+  '.webmanifest': 'application/manifest+json',
+};
+
+/**
+ * The row shape the desk and the phone both read. One place, so a decision
+ * fetched by id cannot disagree with the same decision inside a session list.
+ */
+function wireDecision(row) {
+  return {
+    id: row.id,
+    session_id: row.session_id,
+    observation_id: row.observation_id,
+    ts: row.ts,
+    kind: row.kind,
+    screen_type: row.screen_type,
+    payload: row.payload,
+    confidence: row.confidence,
+    needs_human: row.needs_human ? 1 : 0,
+  };
+}
+
+/**
+ * Everything is wired here but nothing listens — `start()` does that, so tests
+ * can drive the app over a real socket without touching config.
+ */
+export function createApp(cfg, { fetchImpl } = {}) {
+  ensureDirs(cfg);
+  const store = openStore(cfg.dbPath);
+  const gateway = makeGateway(cfg, fetchImpl);
+  const personaSource = makePersonaSource(cfg.personaPath, (path) =>
+    log('persona', `reloaded ${path}`),
+  );
+  const brain = makeBrain({ cfg, store, gateway, personaSource });
+  const study = makeStudy({ cfg, store, gateway, personaSource });
+
+  function json(res, status, body) {
+    const payload = JSON.stringify(body);
+    res.writeHead(status, {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Content-Length': Buffer.byteLength(payload),
+      'Cache-Control': 'no-store',
+    });
+    res.end(payload);
+  }
+
+  function readBody(req) {
+    return new Promise((resolve, reject) => {
+      let size = 0;
+      const chunks = [];
+      req.on('data', (c) => {
+        size += c.length;
+        if (size > MAX_BODY) {
+          reject(Object.assign(new Error('request body too large'), { status: 413 }));
+          req.destroy();
+          return;
+        }
+        chunks.push(c);
+      });
+      req.on('end', () => {
+        if (!chunks.length) return resolve({});
+        try {
+          resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+        } catch {
+          reject(Object.assign(new Error('invalid JSON body'), { status: 400 }));
+        }
+      });
+      req.on('error', reject);
+    });
+  }
+
+  function authorised(req) {
+    if (!cfg.token) return true;
+    const h = req.headers.authorization || '';
+    return h === `Bearer ${cfg.token}`;
+  }
+
+  async function serveStatic(req, res, pathname) {
+    const rel = pathname === '/' ? '/index.html' : pathname;
+    // Resolve inside PUBLIC_DIR only.
+    const target = normalize(join(PUBLIC_DIR, rel));
+    if (!target.startsWith(PUBLIC_DIR + '/')) return json(res, 403, { error: 'forbidden' });
+    if (!existsSync(target)) return json(res, 404, { error: 'not found' });
+    try {
+      const buf = await readFile(target);
+      res.writeHead(200, {
+        'Content-Type': MIME[extname(target)] || 'application/octet-stream',
+        'Content-Length': buf.length,
+      });
+      res.end(buf);
+    } catch (e) {
+      json(res, 500, { error: e.message });
+    }
+  }
+
+  const sessionFor = (id) => {
+    const s = store.getSession(id);
+    if (!s) throw Object.assign(new Error(`unknown session ${id}`), { status: 404 });
+    store.touchSession(id);
+    return s;
+  };
+
+  // Push is fire-and-forget and lazily imported: an unconfigured APNs must cost
+  // nothing, and a slow one must never delay the frame the extension is waiting on.
+  const pushOnce = (() => {
+    let module = null;
+    return async (options) => {
+      if (!module) module = await import('./push.js');
+      return module.pushDecision(options);
+    };
+  })();
+
+  // What is worth interrupting for lives in push.js (shouldPush), so the rule
+  // has one home and can be tested without a provider key. This only decides
+  // whether loading that module is worth it at all.
+  const maybePush = (decision, course) => {
+    if (!cfg.push.enabled || !decision) return;
+    pushOnce({ cfg, store, decision, course }).catch((e) => log('push', 'delivery failed', e.message));
+  };
+
+  // A push that never happens is the hardest failure to notice here: a
+  // registered device and a misconfigured key both look like silence. Health
+  // reports whether the path is configured, how many devices are known, and
+  // what the last attempt actually did.
+  const pushStatus = async () => {
+    const base = {
+      configured: cfg.push.enabled,
+      environment: cfg.push.environment,
+      devices: store.countDevices(),
+      last_attempt: null,
+    };
+
+    // A device count is still worth reporting with push off: "one device
+    // registered, push disabled" is exactly the state that delivers nothing.
+    if (!cfg.push.enabled) return base;
+
+    try {
+      const { lastPushAttempt } = await import('./push.js');
+      return { ...base, last_attempt: lastPushAttempt() };
+    } catch (e) {
+      return { ...base, configured: false, error: e.message };
+    }
+  };
+
+  const routes = {
+    'GET /api/health': async () => ({
+      ok: true,
+      now: nowIso(),
+      mode: cfg.mode,
+      gateway: { url: cfg.gatewayUrl, key_configured: gateway.apiKeyConfigured(), model: cfg.model, vision_model: cfg.visionModel },
+      push: await pushStatus(),
+      counters: store.totals(),
+    }),
+
+    'POST /api/session': async ({ body }) => {
+      const course = String(body.course || '').trim();
+      if (!course) throw Object.assign(new Error('course is required'), { status: 400 });
+      const persona = personaSource();
+      const session = store.createSession({ course, persona });
+      log('session', `start ${session.id}`, course);
+      return { session_id: session.id, course, persona };
+    },
+
+    'POST /api/ingest/frame': async ({ body }) => {
+      const session = sessionFor(body.session_id);
+      if (!body.image_b64) throw Object.assign(new Error('image_b64 is required'), { status: 400 });
+      const result = await brain.processFrame({
+        session,
+        image: { b64: body.image_b64, mime: body.mime || 'image/jpeg' },
+        hash: body.hash || null,
+        ts: body.ts || Date.now() / 1000,
+      });
+      maybePush(result.decision, session.course);
+      return result;
+    },
+
+    'POST /api/ingest/audio': async ({ body }) => {
+      const session = sessionFor(body.session_id);
+      if (!body.audio_b64) throw Object.assign(new Error('audio_b64 is required'), { status: 400 });
+      return brain.processAudio({
+        session,
+        audio: { b64: body.audio_b64, mime: body.mime || 'audio/webm' },
+        ts: body.ts || Date.now() / 1000,
+      });
+    },
+
+    'GET /api/desk': async ({ query }) => {
+      const sessionId = query.get('session_id');
+      if (!sessionId) throw Object.assign(new Error('session_id is required'), { status: 400 });
+      const limit = Number(query.get('limit')) || 30;
+      return { decisions: store.decisionsForSession(sessionId, limit), totals: store.totals() };
+    },
+
+    // One decision by id. A tap on the Live Activity names an answer that may
+    // predate the session this phone currently has open, so it cannot be found
+    // by scanning the desk.
+    'GET /api/decision': async ({ query }) => {
+      const id = query.get('id');
+      if (!id) throw Object.assign(new Error('id is required'), { status: 400 });
+      const row = store.getDecision(id);
+      if (!row) throw Object.assign(new Error(`unknown decision ${id}`), { status: 404 });
+      return { decision: wireDecision(row) };
+    },
+
+    'GET /api/me': async ({ query }) => {
+      const course = query.get('course') || '';
+      const state = course ? store.getPersonaState(course) : null;
+      const persona = applyDrift(personaSource(), state?.drift || {});
+      return {
+        course,
+        persona,
+        drift: state?.drift || {},
+        lessons: store.lessons({ course, limit: 30 }),
+        stats: store.accuracyByScreenType(),
+        totals: store.totals(),
+        sessions: store.recentSessions(10),
+      };
+    },
+
+    'POST /api/correct': async ({ body }) => {
+      if (!body.decision_id) throw Object.assign(new Error('decision_id is required'), { status: 400 });
+      return brain.recordCorrection({
+        decisionId: body.decision_id,
+        correct: Boolean(body.correct),
+        truth: body.truth || '',
+        note: body.note || '',
+      });
+    },
+
+    'POST /api/reflect': async ({ body }) => {
+      const course = String(body.course || '').trim();
+      if (!course) throw Object.assign(new Error('course is required'), { status: 400 });
+      return brain.reflect({ course, sessionId: body.session_id });
+    },
+
+    'POST /api/ask': async ({ body }) => {
+      const course = String(body.course || '').trim();
+      const question = String(body.question || '').trim();
+      if (!course || !question) throw Object.assign(new Error('course and question are required'), { status: 400 });
+      return brain.ask({ course, question, sessionId: body.session_id });
+    },
+
+    'POST /api/study': async ({ body }) => {
+      const course = String(body.course || '').trim();
+      if (!course) throw Object.assign(new Error('course is required'), { status: 400 });
+      return study.build({ course, sessionId: body.session_id });
+    },
+
+    'POST /api/devices': async ({ body }) => {
+      const token = String(body.device_token || '').trim();
+      if (!/^[0-9a-fA-F]{64}$/.test(token)) {
+        throw Object.assign(new Error('device_token must be a 64-hex APNs token'), { status: 400 });
+      }
+      store.addDevice({
+        token,
+        platform: String(body.platform || 'ios'),
+        bundleId: String(body.bundle_id || ''),
+      });
+      log('push', `device registered (${store.countDevices()} known)`, token.slice(0, 10));
+      return { ok: true, devices: store.countDevices(), push_configured: cfg.push.enabled };
+    },
+
+    'GET /api/persona': async () => ({
+      path: cfg.personaPath,
+      exists: existsSync(cfg.personaPath),
+      persona: personaSource(),
+    }),
+  };
+
+  const server = createHttpServer(async (req, res) => {
+    const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+    const key = `${req.method} ${url.pathname}`;
+
+    if (!url.pathname.startsWith('/api/')) return serveStatic(req, res, url.pathname);
+
+    if (!authorised(req)) return json(res, 401, { error: 'unauthorized' });
+
+    const handler = routes[key];
+    if (!handler) return json(res, 404, { error: `no route ${key}` });
+
+    try {
+      const body = req.method === 'POST' ? await readBody(req) : {};
+      const result = await handler({ body, query: url.searchParams, req });
+      json(res, 200, result);
+    } catch (e) {
+      const status = e.status || 500;
+      if (status >= 500) warn('http', `${key} failed`, e.message);
+      json(res, status, { error: String(e.message || e) });
+    }
+  });
+
+  return { server, store, gateway, brain, study, personaSource, cfg };
+}
+
+export async function start(cfg) {
+  const { server } = createApp(cfg);
+  await new Promise((resolve) => server.listen(cfg.port, cfg.host, resolve));
+  const shown = cfg.host === '0.0.0.0' ? 'localhost' : cfg.host;
+  log('server', `listening on http://${shown}:${cfg.port}`);
+  log('server', `mode=${cfg.mode} gateway=${cfg.gatewayUrl} model=${cfg.model}`);
+  if (cfg.host === '0.0.0.0' && !cfg.token) {
+    warn('server', 'bound to 0.0.0.0 with no COURSEMATE_TOKEN — anyone on your network can drive this agent');
+  }
+  return server;
+}
+
+// CLI entry: `npm start`
+if (process.argv[1] && process.argv[1].endsWith('server.js')) {
+  const { loadConfig } = await import('./config.js');
+  await start(loadConfig());
+}
