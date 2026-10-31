@@ -13,6 +13,7 @@ import {
   sendApns,
   notificationFor,
   lastPushAttempt,
+  totalPruned,
 } from '../src/push.js';
 
 // A developer's real .env may carry APNs settings; every config here states its
@@ -325,6 +326,165 @@ test('one decision can be fetched by id, in the same shape the desk sends', asyn
 
     const unnamed = await fetch(`http://127.0.0.1:${port}/api/decision`);
     assert.equal(unnamed.status, 400);
+  } finally {
+    await new Promise((resolve) => app.server.close(resolve));
+    app.store.close();
+  }
+});
+
+test('a transient apns failure is retried, and only for the device that failed', async () => {
+  const rounds = [];
+  let call = 0;
+
+  const out = await pushDecision({
+    cfg: minimalCfg(),
+    store: { devices: () => [{ token: 'flaky' }, { token: 'steady' }], removeDevice() {} },
+    decision: decision({ id: 'dec_retry' }),
+    send: async ({ deviceTokens }) => {
+      call += 1;
+      rounds.push(deviceTokens);
+      return {
+        sent: 0,
+        results: deviceTokens.map((token) =>
+          token === 'flaky' && call === 1
+            ? { token, status: 503, reason: 'ServiceUnavailable' }
+            : { token, status: 200, reason: 'apns-id 1' },
+        ),
+      };
+    },
+    sleep: async () => {},
+  });
+
+  assert.equal(out.attempts, 2);
+  assert.equal(out.sent, 2, 'the retried device still ends up delivered');
+  assert.deepEqual(rounds[0], ['flaky', 'steady']);
+  assert.deepEqual(rounds[1], ['flaky'], 'a phone that already got the answer is not buzzed again');
+
+  const attempt = lastPushAttempt();
+  assert.equal(attempt.attempts, 2);
+  assert.equal(attempt.failed, 0, 'the failure was resolved by the retry');
+});
+
+test('a definitive apns rejection is not retried', async () => {
+  let calls = 0;
+
+  await pushDecision({
+    cfg: minimalCfg(),
+    store: { devices: () => [{ token: 'bad' }], removeDevice() {} },
+    decision: decision(),
+    send: async ({ deviceTokens }) => {
+      calls += 1;
+      return {
+        sent: 0,
+        results: deviceTokens.map((token) => ({ token, status: 400, reason: 'BadDeviceToken' })),
+      };
+    },
+    sleep: async () => {},
+  });
+
+  assert.equal(calls, 1, 'a bad token stays bad; retrying it only spends attempts');
+  assert.equal(lastPushAttempt().failed, 1);
+});
+
+test('retries stop at the cap and the answer is never reported as delivered', async () => {
+  let calls = 0;
+
+  const out = await pushDecision({
+    cfg: minimalCfg(),
+    store: { devices: () => [{ token: 'down' }], removeDevice() {} },
+    decision: decision(),
+    send: async ({ deviceTokens }) => {
+      calls += 1;
+      return {
+        sent: 0,
+        results: deviceTokens.map((token) => ({ token, status: 503, reason: 'ServiceUnavailable' })),
+      };
+    },
+    sleep: async () => {},
+  });
+
+  assert.equal(calls, 3, 'bounded, so an apns outage cannot spin');
+  assert.equal(out.sent, 0);
+  assert.equal(out.results.length, 1, 'one row per device, not one per attempt');
+  assert.equal(out.results[0].status, 503);
+});
+
+test('a token apple calls unregistered is pruned, and the delete is retried', async () => {
+  const removed = [];
+  let deletes = 0;
+  const store = {
+    devices: () => (removed.includes('gone') ? [] : [{ token: 'gone' }]),
+    removeDevice(token) {
+      deletes += 1;
+      if (deletes === 1) throw new Error('database is locked');
+      removed.push(token);
+    },
+  };
+
+  const before = totalPruned();
+  await pushDecision({
+    cfg: minimalCfg(),
+    store,
+    decision: decision(),
+    send: async () => ({
+      sent: 0,
+      results: [{ token: 'gone', status: 410, reason: 'Unregistered' }],
+    }),
+    sleep: async () => {},
+  });
+
+  assert.equal(deletes, 2, 'a locked writer is worth one more try');
+  assert.equal(totalPruned() - before, 1);
+
+  const attempt = lastPushAttempt();
+  assert.equal(attempt.pruned, 1);
+  assert.equal(attempt.prune_failed, 0);
+});
+
+test('a prune that cannot be confirmed is reported, not counted', async () => {
+  const store = {
+    devices: () => [{ token: 'stuck' }],
+    removeDevice() {
+      throw new Error('database is locked');
+    },
+  };
+
+  const before = totalPruned();
+  await pushDecision({
+    cfg: minimalCfg(),
+    store,
+    decision: decision(),
+    send: async () => ({
+      sent: 0,
+      results: [{ token: 'stuck', status: 410, reason: 'Unregistered' }],
+    }),
+    sleep: async () => {},
+  });
+
+  assert.equal(totalPruned() - before, 0, 'a token still in the table is not pruned');
+
+  const attempt = lastPushAttempt();
+  assert.equal(attempt.pruned, 0);
+  assert.equal(attempt.prune_failed, 1, 'and the failure is visible instead of silent');
+});
+
+test('health reports the pruned total once push is configured', async () => {
+  const app = createApp(
+    loadConfig({
+      COURSEMATE_PUSH: '1',
+      APNS_KEY_PATH: join(tempDir('push-total'), 'unused.p8'),
+      APNS_KEY_ID: 'ABC123DEFG',
+      APNS_TEAM_ID: 'TEAM123456',
+      COURSEMATE_DATA_DIR: tempDir('push-total-data'),
+    }),
+  );
+  await new Promise((resolve) => app.server.listen(0, '127.0.0.1', resolve));
+  const { port } = app.server.address();
+
+  try {
+    const body = await (await fetch(`http://127.0.0.1:${port}/api/health`)).json();
+    assert.equal(body.push.configured, true);
+    assert.equal(body.push.pruned_total, totalPruned());
   } finally {
     await new Promise((resolve) => app.server.close(resolve));
     app.store.close();

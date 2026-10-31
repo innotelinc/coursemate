@@ -1,0 +1,26 @@
+name: test
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+jobs:
+  test:
+    name: Node 24 · unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      # There is nothing to install: `node:test` runs the suites and
+      # `node:sqlite` is the store, so the whole stack ships with Node.
+      #
+      # Pinned to 24 because `node:sqlite` is unflagged only from 23.4 — on
+      # 22.x it needs --experimental-sqlite, and `engines` claims >=22.5.
+      - name: Run tests
+        run: npm test

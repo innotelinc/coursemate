@@ -157,8 +157,10 @@ export function createApp(cfg, { fetchImpl } = {}) {
     if (!cfg.push.enabled) return base;
 
     try {
-      const { lastPushAttempt } = await import('./push.js');
-      return { ...base, last_attempt: lastPushAttempt() };
+      const { lastPushAttempt, totalPruned } = await import('./push.js');
+      // pruned_total is cumulative for this process: a device list that quietly
+      // keeps rejecting tokens shows up here before it shows up as silence.
+      return { ...base, last_attempt: lastPushAttempt(), pruned_total: totalPruned() };
     } catch (e) {
       return { ...base, configured: false, error: e.message };
     }
