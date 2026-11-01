@@ -88,6 +88,30 @@ jobs:
           echo "MARKETING_VERSION=${{ github.event.inputs.version }}" >> "$GITHUB_ENV"
           echo "BUILD_NUMBER=${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
 
+      # App Store Connect refuses anything below the iOS 26 SDK, and the image
+      # default is Xcode 16.4. Every Xcode on the box is listed first, so a run
+      # that stops here says what this image actually carries.
+      - name: Select the newest Xcode
+        run: |
+          set -euo pipefail
+          echo "images present:"; ls -1d /Applications/Xcode*.app || true
+          best=""; bestv=0
+          for app in /Applications/Xcode*.app; do
+            [ -d "$app" ] || continue
+            v=$("$app/Contents/Developer/usr/bin/xcodebuild" -version 2>/dev/null | head -1 | awk '{print $2}')
+            [ -z "$v" ] && continue
+            echo "  $app -> $v"
+            major=${v%%.*}
+            if [ "$major" -gt "$bestv" ]; then best="$app"; bestv=$major; fi
+          done
+          if [ "$bestv" -lt 26 ]; then
+            echo "::error::No Xcode 26 on this image; the newest is $bestv. App Store Connect rejects the 18.x SDK."
+            exit 1
+          fi
+          sudo xcode-select -s "$best"
+          echo "selected: $best"
+          xcodebuild -version
+
       - name: Archive
         working-directory: ios
         run: |
