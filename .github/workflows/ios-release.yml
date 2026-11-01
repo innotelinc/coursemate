@@ -29,6 +29,11 @@ jobs:
       ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
       ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
       TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      # Where the app looks for the server, and the bearer it presents. The URL
+      # is public; the token is a repository secret and only ever reaches the
+      # bundle that is about to be signed.
+      CM_SERVER: https://cm.innotel.tech
+      CM_TOKEN: ${{ secrets.COURSEMATE_TOKEN }}
 
     steps:
       - name: Check out the server
@@ -81,6 +86,26 @@ jobs:
             echo "::error::CourseMate.xcodeproj is out of date in the app repository."
             exit 1
           fi
+
+      # A fresh install has to connect on its own, so the endpoint ships inside
+      # the bundle rather than being typed into Settings. The token comes from
+      # the secret and is written here, not committed: this repository is public.
+      - name: Point the build at the server
+        working-directory: ios
+        run: |
+          set -euo pipefail
+          for plist in CourseMate/Info.plist CourseMateBroadcast/Info.plist; do
+            /usr/libexec/PlistBuddy -c "Set :cm_url ${CM_SERVER}" "$plist"
+          done
+          if [ -n "${CM_TOKEN:-}" ]; then
+            for plist in CourseMate/Info.plist CourseMateBroadcast/Info.plist; do
+              /usr/libexec/PlistBuddy -c "Set :cm_token ${CM_TOKEN}" "$plist"
+            done
+            echo "endpoint ${CM_SERVER} with a bearer token"
+          else
+            echo "::warning::COURSEMATE_TOKEN is not set — this build needs the token entered once in Settings."
+          fi
+          /usr/libexec/PlistBuddy -c "Print :cm_url" CourseMate/Info.plist
 
       - name: Version
         run: |
