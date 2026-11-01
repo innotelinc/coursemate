@@ -17,14 +17,14 @@ answer, a note or a drafted essay in your own voice.
 [![Node 22.5+](https://img.shields.io/badge/node-22.5%2B-339933)](package.json)
 [![No dependencies](https://img.shields.io/badge/dependencies-none-4fe3c1)](package.json)
 [![Memory: SQLite](https://img.shields.io/badge/memory-sqlite-003b57)](#how-the-memory-works)
-[![Landing page](https://img.shields.io/badge/landing-innotelinc.github.io%2Fcoursemate-2ea043)](https://innotelinc.github.io/coursemate/)
+[![Landing page](https://img.shields.io/badge/coursemate.innotel.tech-2ea043)](https://coursemate.innotel.tech/)
 [![Never submits](https://img.shields.io/badge/submits-never%20%E2%80%94%20your%20call-f5b95b)](#the-boundary-i-built-in-and-why)
 
-**Landing page:** [innotelinc.github.io/coursemate](https://innotelinc.github.io/coursemate/) ·
+**Product:** [coursemate.innotel.tech](https://coursemate.innotel.tech/) ·
 **iOS capture:** [coursemate-ios](https://github.com/innotelinc/coursemate-ios) ·
 **Known limits:** [below](#known-limits)
 
-An **Innotel Labs** product · [innotel.us](https://innotel.us)
+An **Innotel Labs** product · [coursemate.innotel.tech](https://coursemate.innotel.tech/)
 
 </div>
 
