@@ -9,7 +9,6 @@ import { makeBrain } from './brain.js';
 import { makePersonaSource, applyDrift } from './persona.js';
 import { makeStudy } from './study.js';
 import { log, warn, nowIso } from './util.js';
-import { probeKey } from './apns-probe.js';
 
 const PUBLIC_DIR = join(ROOT, 'public');
 // The landing page keeps its own tree. It is served from this origin now, so a
@@ -365,110 +364,6 @@ export function createApp(cfg, { fetchImpl } = {}) {
       });
       log('push', `device registered (${store.countDevices()} known)`, token.slice(0, 10));
       return { ok: true, devices: store.countDevices(), push_configured: cfg.push.enabled };
-    },
-
-    // ── One-shot: take delivery of the APNs key ────────────────────────────
-    // The key lives in a repository secret, and a secret is decrypted only
-    // inside a workflow runner — never by an API, and the runner is not this
-    // machine. So a run posts the key here instead.
-    //
-    // It is deliberately hard to abuse: closed unless COURSEMATE_INGEST_NONCE
-    // is set, requires that nonce as a header, burns the nonce on first use,
-    // and refuses to hold anything it has not proved with Apple. The service
-    // runs with ProtectSystem=full, so it cannot write /etc and therefore never
-    // installs the key itself — it drops it in the data directory for a
-    // root-owned installer, which keeps the privileged step out of the request
-    // path. Key material is never logged and never echoed back.
-    'POST /api/admin/apns-install': async ({ body, req }) => {
-      const nonce = String(req.headers['x-ingest-nonce'] || '');
-      if (!cfg.ingestNonce || nonce !== cfg.ingestNonce) {
-        throw Object.assign(new Error('ingest is not open'), { status: 403 });
-      }
-
-      const candidates = Array.isArray(body.candidates) ? body.candidates : [];
-      if (!candidates.length) {
-        throw Object.assign(new Error('candidates is required'), { status: 400 });
-      }
-
-      const probes = [];
-      let winner = null;
-
-      for (const candidate of candidates) {
-        const label = String(candidate.label || 'candidate').slice(0, 40);
-        const keyId = String(candidate.key_id || '').trim();
-        const teamId = String(candidate.team_id || '').trim();
-        const p8 = String(candidate.p8 || '').trim();
-        // A secret is often the file base64-encoded, because PEM newlines do
-        // not survive every secret store intact.
-        let pem = p8;
-        if (pem && !pem.includes('-----BEGIN')) {
-          const decoded = Buffer.from(pem, 'base64').toString('utf8');
-          if (decoded.includes('-----BEGIN')) pem = decoded;
-        }
-        const topic = String(candidate.topic || 'us.innotel.coursemate').trim();
-        const environment = candidate.environment === 'sandbox' ? 'sandbox' : 'production';
-
-        if (!/^[A-Z0-9]{10}$/.test(keyId) || !/^[A-Z0-9]{10}$/.test(teamId)) {
-          probes.push({ label, key_id: keyId, verdict: 'bad-key-id-or-team', authenticates: false });
-          continue;
-        }
-        if (!pem.includes('-----BEGIN')) {
-          probes.push({ label, key_id: keyId, verdict: 'not-a-pem-key', authenticates: false });
-          continue;
-        }
-
-        let probe;
-        try {
-          probe = await probeKey({ keyPem: pem, keyId, teamId, topic, environment });
-        } catch (e) {
-          probes.push({ label, key_id: keyId, verdict: 'unusable-key', detail: e.message, authenticates: false });
-          continue;
-        }
-
-        probes.push({ label, key_id: keyId, team_id: teamId, environment, ...probe });
-        if (probe.authenticates && !winner) {
-          winner = { label, pem, keyId, teamId, topic, environment, probe };
-        }
-      }
-
-      if (!winner) {
-        // No key to install, and the nonce stays open so a corrected key can be
-        // offered without editing the unit again.
-        return { accepted: false, probes };
-      }
-
-      // Single use, from here on: even a failed write must not leave the door open.
-      cfg.ingestNonce = '';
-
-      const dir = join(cfg.dataDir, 'apns-inbox');
-      await mkdir(dir, { recursive: true, mode: 0o700 });
-      const pemFile = join(dir, `AuthKey_${winner.keyId}.p8`);
-      await writeFile(pemFile, winner.pem.endsWith('\n') ? winner.pem : `${winner.pem}\n`, { mode: 0o600 });
-      await writeFile(
-        join(dir, 'install.json'),
-        `${JSON.stringify(
-          {
-            key_id: winner.keyId,
-            team_id: winner.teamId,
-            topic: winner.topic,
-            environment: winner.environment,
-            label: winner.label,
-          },
-          null,
-          2,
-        )}\n`,
-        { mode: 0o600 },
-      );
-
-      log('ingest', `APNs key accepted from ${winner.label}`, `${winner.keyId} (${winner.environment})`);
-      return {
-        accepted: true,
-        installed_from: winner.label,
-        key_id: winner.keyId,
-        team_id: winner.teamId,
-        environment: winner.environment,
-        probes,
-      };
     },
 
     'GET /api/persona': async () => ({
