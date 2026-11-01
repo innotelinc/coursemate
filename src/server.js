@@ -91,10 +91,50 @@ export function createApp(cfg, { fetchImpl } = {}) {
     });
   }
 
-  function authorised(req) {
-    if (!cfg.token) return true;
-    const h = req.headers.authorization || '';
-    return h === `Bearer ${cfg.token}`;
+  // A key sold for the hosted server is an OmniRoute key: minted by Magnate when
+  // Stripe says the money arrived, revoked when the session ends. The server has
+  // no account list, so it asks the gateway the key was minted on — one cheap
+  // call to /models with the key as the bearer. Verdicts are cached briefly so a
+  // burst of frames does not become a burst of gateway requests.
+  const keyVerdicts = new Map();
+  const KEY_VERDICT_TTL_MS = 5 * 60_000;
+  const KEY_VERDICT_MAX = 256;
+
+  async function gatewayAccepts(key) {
+    const cached = keyVerdicts.get(key);
+    if (cached && Date.now() - cached.at < KEY_VERDICT_TTL_MS) return cached.ok;
+
+    let ok = false;
+    try {
+      const res = await fetch(`${cfg.gatewayUrl}/models`, {
+        headers: { Authorization: `Bearer ${key}` },
+        signal: AbortSignal.timeout(5000),
+      });
+      ok = res.ok;
+    } catch {
+      // A gateway that cannot be reached is not a verdict on the key: refuse this
+      // request, but do not cache the failure for five minutes.
+      return false;
+    }
+
+    if (keyVerdicts.size >= KEY_VERDICT_MAX) keyVerdicts.clear();
+    keyVerdicts.set(key, { ok, at: Date.now() });
+    return ok;
+  }
+
+  async function authorised(req) {
+    const header = req.headers.authorization || '';
+    const given = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
+
+    if (cfg.token) {
+      if (given && given === cfg.token) return true;
+      return cfg.gatewayKeys && given ? gatewayAccepts(given) : false;
+    }
+
+    // No shared token: either this is an open development server, as before, or
+    // it is the hosted one where a purchased key is the only way in.
+    if (cfg.gatewayKeys) return given ? gatewayAccepts(given) : false;
+    return true;
   }
 
   async function serveStatic(req, res, pathname) {
@@ -303,7 +343,7 @@ export function createApp(cfg, { fetchImpl } = {}) {
 
     if (!url.pathname.startsWith('/api/')) return serveStatic(req, res, url.pathname);
 
-    if (!authorised(req)) return json(res, 401, { error: 'unauthorized' });
+    if (!(await authorised(req))) return json(res, 401, { error: 'unauthorized' });
 
     const handler = routes[key];
     if (!handler) return json(res, 404, { error: `no route ${key}` });

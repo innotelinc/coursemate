@@ -344,3 +344,43 @@ test('a bearer token is enforced when configured', async () => {
   await new Promise((r) => gated.server.close(r));
   gated.store.close();
 });
+
+test('a purchased gateway key is accepted when gateway keys are enabled', async () => {
+  // Stand in for the OmniRoute gateway: it knows exactly one key, the way a real
+  // gateway knows the keys Magnate minted and nothing else.
+  const { createServer } = await import('node:http');
+  const gate = createServer((req, res) => {
+    const ok = req.headers.authorization === 'Bearer bought-key';
+    res.writeHead(ok ? 200 : 401, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(ok ? { data: [] } : { error: 'invalid key' }));
+  });
+  await new Promise((r) => gate.listen(0, '127.0.0.1', r));
+  const gateUrl = `http://127.0.0.1:${gate.address().port}/v1`;
+
+  const cfg = loadConfig({
+    COURSEMATE_GATEWAY_URL: gateUrl,
+    COURSEMATE_API_KEY: 'test-key',
+    COURSEMATE_DATA_DIR: join(tmp, 'gatewaykeys'),
+    COURSEMATE_TOKEN: '',
+    COURSEMATE_GATEWAY_KEYS: '1',
+  });
+  const app = createApp(cfg);
+  const base = await listen(app);
+
+  const anonymous = await fetch(`${base}/api/health`);
+  assert.equal(anonymous.status, 401);
+
+  const bought = await fetch(`${base}/api/health`, {
+    headers: { Authorization: 'Bearer bought-key' },
+  });
+  assert.equal(bought.status, 200);
+
+  const unknown = await fetch(`${base}/api/health`, {
+    headers: { Authorization: 'Bearer not-a-key' },
+  });
+  assert.equal(unknown.status, 401);
+
+  await new Promise((r) => app.server.close(r));
+  app.store.close();
+  await new Promise((r) => gate.close(r));
+});

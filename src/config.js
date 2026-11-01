@@ -128,6 +128,14 @@ export function loadConfig(overrides = {}) {
     host: env.COURSEMATE_HOST || '127.0.0.1',
     port: num(env.COURSEMATE_PORT, 8790),
     token: env.COURSEMATE_TOKEN || '',
+
+    // Purchased keys. CourseMate is sold the way Sage is: one gateway key per
+    // session, minted on the OmniRoute gateway and deleted when the window ends.
+    // With this on, a bearer that the gateway accepts is as good as the shared
+    // token — which is what makes a bought key work without an account here.
+    // Off by default: it moves authorisation from one secret to "whatever the
+    // gateway will take", which is the hosted deployment's choice to make.
+    gatewayKeys: bool(env.COURSEMATE_GATEWAY_KEYS, false),
     dataDir,
     dbPath: join(dataDir, 'coursemate.db'),
     framesDir: join(dataDir, 'frames'),
