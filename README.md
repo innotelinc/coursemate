@@ -1,4 +1,34 @@
+<div align="center">
+
 # CourseMate
+
+[![CI](https://github.com/innotelinc/coursemate/actions/workflows/ci.yml/badge.svg)](https://github.com/innotelinc/coursemate/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+
+**Watch it, listen to it, answer it.**
+
+A course-taking agent for **any course, on any screen**: it watches what is on
+screen, listens to the lecture, remembers the course, and hands you a validated
+answer, a note or a drafted essay in your own voice.
+
+</div>
+
+> **About CourseMate** — the server half of a screen-and-audio study agent: frame
+> classification, transcription, course memory, decision routing and the answer
+> cards the phone reads. **iOS capture:** [coursemate-ios](https://github.com/innotelinc/coursemate-ios)
+> · **Landing page:** [innotelinc.github.io/coursemate](https://innotelinc.github.io/coursemate/)
+
+---
+
+## Why CourseMate
+
+| Problem | CourseMate answer |
+| --- | --- |
+| A quiz answer has to be right on the first try. | A vision model returns typed JSON — screen kind, exact stem, options — and the answer is validated against a rubric before it becomes a card. |
+| Every course lives somewhere different. | It only ever sees pixels and audio, so a web LMS, a desktop app, a PDF and a TV behave the same. |
+| Answers in a generic assistant voice read as not yours. | A persona file you own, lessons learned from your corrections, and a bounded reflection pass that nudges its own voice without wandering. |
+| Watching a lecture and taking notes are two jobs. | Transcript, slides and readings are distilled into per-course facts the drafts cite. |
 
 A course-taking agent for **any course, on any screen**. It watches what you
 watch, listens to what you hear, remembers the course, and decides what to do
@@ -231,3 +261,27 @@ not prove the model can read a quiz — pass a real screenshot for that.
 | No audio | Tab audio was not shared. Re-share and tick *also share tab audio*, or press **Mic**. |
 | `this browser cannot capture the screen` | Mobile browser. Use the iOS/Android paths in `capture/README.md`. |
 | Every essay sounds generic | It has no material to work with — let it listen through a lecture, or ask it to take notes on the reading first. |
+
+## Documentation
+
+| Doc | What it covers |
+| --- | --- |
+| [docs/stack.md](docs/stack.md) | CourseMate's role in the Innotel Platform Stack (LearningOps) |
+| [README.md#configuration](README.md) | every environment variable it reads |
+| [capture/README.md](capture/README.md) | the capture contract for any client |
+
+## License
+
+MIT — see [LICENSE](LICENSE). No vendored upstream code.
+
+*CourseMate — watch it, listen to it, answer it. © 2026 Darnel Hunter*
+
+## 🏛️ Platform stack
+
+CourseMate is the ecosystem's **LearningOps** platform in the
+[**Innotel Platform Stack**](https://github.com/innotelinc/innotel-platform-stack) —
+the canonical single-responsibility architecture where Authentik owns identity,
+Cerulean Vault owns secrets, Cerulean owns trust, ONYX owns storage, Magnate owns
+revenue, NPM Edge owns the edge, and every other platform is a business function
+that consumes them. See [docs/stack.md](docs/stack.md) for this platform's
+owns/consumes boundaries.
