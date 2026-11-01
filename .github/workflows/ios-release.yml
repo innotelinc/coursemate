@@ -66,17 +66,37 @@ jobs:
         run: |
           set -euo pipefail
           KEY_DIR="$RUNNER_TEMP/asc"
+          KEY_FILE="$KEY_DIR/AuthKey_${ASC_KEY_ID}.p8"
           mkdir -p "$KEY_DIR"
           if printf '%s' "$ASC_KEY" | grep -q 'BEGIN PRIVATE KEY'; then
-            printf '%s\n' "$ASC_KEY" > "$KEY_DIR/AuthKey_${ASC_KEY_ID}.p8"
+            printf '%s\n' "$ASC_KEY" > "$KEY_FILE"
           else
-            printf '%s' "$ASC_KEY" | tr -d '\n' | base64 --decode > "$KEY_DIR/AuthKey_${ASC_KEY_ID}.p8"
+            printf '%s' "$ASC_KEY" | tr -d '\n' | base64 --decode > "$KEY_FILE" 2>/dev/null || : > "$KEY_FILE"
           fi
-          chmod 600 "$KEY_DIR/AuthKey_${ASC_KEY_ID}.p8"
-          openssl pkey -in "$KEY_DIR/AuthKey_${ASC_KEY_ID}.p8" -noout >/dev/null
+          chmod 600 "$KEY_FILE"
+
+          # Validate before a single thing is built, and say what to do about it.
+          # The raw openssl complaint ("Expecting: ANY PRIVATE KEY") names neither
+          # the secret nor the fix, and it cost a whole release to interpret. The
+          # length and line count are reported because they separate "wrong file"
+          # from "truncated paste" without printing the secret.
+          if ! openssl pkey -in "$KEY_FILE" -noout >/dev/null 2>"$RUNNER_TEMP/openssl.err"; then
+            echo "::error::APP_STORE_CONNECT_KEY is not a private key (${#ASC_KEY} bytes, $(wc -l < "$KEY_FILE" | tr -d ' ') line(s))."
+            echo "::error::Re-download AuthKey_${ASC_KEY_ID}.p8 from App Store Connect > Users and Access > Integrations."
+            echo "::error::Then: gh secret set APP_STORE_CONNECT_KEY --repo ${{ github.repository }} < AuthKey_${ASC_KEY_ID}.p8"
+            sed 's/^/    openssl: /' "$RUNNER_TEMP/openssl.err" || true
+            exit 1
+          fi
+
+          # App Store Connect keys are EC P-256. A key that parses but is another
+          # kind will be refused at upload with a 401 that reads like a bad ID.
+          if ! openssl pkey -in "$KEY_FILE" -noout -text 2>/dev/null | grep -qi 'prime256v1\|NIST CURVE: P-256'; then
+            echo "::warning::APP_STORE_CONNECT_KEY is not an EC P-256 key; App Store Connect keys are, so the upload may be refused."
+          fi
+
           mkdir -p "$HOME/.appstoreconnect/private_keys"
-          cp "$KEY_DIR/AuthKey_${ASC_KEY_ID}.p8" "$HOME/.appstoreconnect/private_keys/"
-          echo "KEY_PATH=$KEY_DIR/AuthKey_${ASC_KEY_ID}.p8" >> "$GITHUB_ENV"
+          cp "$KEY_FILE" "$HOME/.appstoreconnect/private_keys/"
+          echo "KEY_PATH=$KEY_FILE" >> "$GITHUB_ENV"
 
       - name: Project matches its generator
         working-directory: ios
