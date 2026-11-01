@@ -398,6 +398,13 @@ export function createApp(cfg, { fetchImpl } = {}) {
         const keyId = String(candidate.key_id || '').trim();
         const teamId = String(candidate.team_id || '').trim();
         const p8 = String(candidate.p8 || '').trim();
+        // A secret is often the file base64-encoded, because PEM newlines do
+        // not survive every secret store intact.
+        let pem = p8;
+        if (pem && !pem.includes('-----BEGIN')) {
+          const decoded = Buffer.from(pem, 'base64').toString('utf8');
+          if (decoded.includes('-----BEGIN')) pem = decoded;
+        }
         const topic = String(candidate.topic || 'us.innotel.coursemate').trim();
         const environment = candidate.environment === 'sandbox' ? 'sandbox' : 'production';
 
@@ -405,14 +412,14 @@ export function createApp(cfg, { fetchImpl } = {}) {
           probes.push({ label, key_id: keyId, verdict: 'bad-key-id-or-team', authenticates: false });
           continue;
         }
-        if (!p8.includes('-----BEGIN')) {
+        if (!pem.includes('-----BEGIN')) {
           probes.push({ label, key_id: keyId, verdict: 'not-a-pem-key', authenticates: false });
           continue;
         }
 
         let probe;
         try {
-          probe = await probeKey({ keyPem: p8, keyId, teamId, topic, environment });
+          probe = await probeKey({ keyPem: pem, keyId, teamId, topic, environment });
         } catch (e) {
           probes.push({ label, key_id: keyId, verdict: 'unusable-key', detail: e.message, authenticates: false });
           continue;
@@ -420,7 +427,7 @@ export function createApp(cfg, { fetchImpl } = {}) {
 
         probes.push({ label, key_id: keyId, team_id: teamId, environment, ...probe });
         if (probe.authenticates && !winner) {
-          winner = { label, p8, keyId, teamId, topic, environment, probe };
+          winner = { label, pem, keyId, teamId, topic, environment, probe };
         }
       }
 
@@ -436,7 +443,7 @@ export function createApp(cfg, { fetchImpl } = {}) {
       const dir = join(cfg.dataDir, 'apns-inbox');
       await mkdir(dir, { recursive: true, mode: 0o700 });
       const pemFile = join(dir, `AuthKey_${winner.keyId}.p8`);
-      await writeFile(pemFile, winner.p8.endsWith('\n') ? winner.p8 : `${winner.p8}\n`, { mode: 0o600 });
+      await writeFile(pemFile, winner.pem.endsWith('\n') ? winner.pem : `${winner.pem}\n`, { mode: 0o600 });
       await writeFile(
         join(dir, 'install.json'),
         `${JSON.stringify(
