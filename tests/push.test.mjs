@@ -570,3 +570,72 @@ test('health reports the pruned total once push is configured', async () => {
     app.store.close();
   }
 });
+
+test('a token registered through the API is the one the next answer is pushed to', async () => {
+  // Registration and delivery are both covered, but never joined: the phone
+  // hands its token to /api/devices and something else decides what to send.
+  // What a user depends on is that join — that the token the app handed over is
+  // the token Apple is asked to deliver to, and that one registered device is
+  // one delivery, not none and not two.
+  const dir = tempDir('registered');
+  const cfg = loadConfig({
+    ...NO_APNS,
+    COURSEMATE_GATEWAY_URL: 'http://127.0.0.1:1/v1',
+    COURSEMATE_API_KEY: 'test-key',
+    COURSEMATE_DATA_DIR: dir,
+    COURSEMATE_TOKEN: '',
+  });
+
+  const app = createApp(cfg);
+  const token = 'ab'.repeat(32); // 64 hex: the shape APNs issues
+
+  try {
+    await new Promise((resolve) => app.server.listen(0, '127.0.0.1', resolve));
+    const base = `http://127.0.0.1:${app.server.address().port}`;
+
+    const res = await fetch(`${base}/api/devices`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        device_token: token,
+        platform: 'ios',
+        bundle_id: 'us.innotel.coursemate',
+      }),
+    });
+    assert.equal(res.status, 200);
+    assert.equal((await res.json()).devices, 1, 'the route reports the device it stored');
+
+    const sent = [];
+    const out = await pushDecision({
+      cfg: {
+        ...cfg,
+        push: {
+          ...cfg.push,
+          enabled: true,
+          minConfidence: 0.6,
+          keyId: 'ABCDEFGHIJ',
+          teamId: 'BH7WW2BR39',
+          keyPath: '/nonexistent.p8',
+        },
+      },
+      store: app.store,
+      decision: decision({ confidence: 0.91 }),
+      course: 'BIOL 201',
+      send: async ({ deviceTokens, payload }) => {
+        sent.push({ deviceTokens, payload });
+        return {
+          sent: deviceTokens.length,
+          results: deviceTokens.map((t) => ({ token: t, status: 200, reason: 'ok' })),
+        };
+      },
+    });
+
+    assert.equal(sent.length, 1, 'one payload for one device');
+    assert.deepEqual(sent[0].deviceTokens, [token], 'the token that was registered, not a stand-in');
+    assert.ok(sent[0].payload?.aps, 'an actual APNs payload, not a bare object');
+    assert.equal(out.sent, 1);
+  } finally {
+    await new Promise((r) => app.server.close(r));
+    app.store.close();
+  }
+});
