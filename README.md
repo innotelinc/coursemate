@@ -325,7 +325,7 @@ not prove the model can read a quiz — pass a real screenshot for that.
 ## License
 
 MIT — see [LICENSE](LICENSE). Copyright © 2026 Innotel Inc. An **Innotel Labs**
-product — [innotel.us](https://innotel.us). No vendored upstream code.
+product — [coursemate.innotel.tech](https://coursemate.innotel.tech/). No vendored upstream code.
 
 *CourseMate — watch it, listen to it, answer it.*
 
