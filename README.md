@@ -12,12 +12,17 @@ A course-taking agent for **any course, on any screen**: it watches what is on
 screen, listens to the lecture, remembers the course, and hands you a validated
 answer, a note or a drafted essay in your own voice.
 
-</div>
+[![Node 22.5+](https://img.shields.io/badge/node-22.5%2B-339933)](package.json)
+[![No dependencies](https://img.shields.io/badge/dependencies-none-4fe3c1)](package.json)
+[![Memory: SQLite](https://img.shields.io/badge/memory-sqlite-003b57)](#how-the-memory-works)
+[![Landing page](https://img.shields.io/badge/landing-innotelinc.github.io%2Fcoursemate-2ea043)](https://innotelinc.github.io/coursemate/)
+[![Never submits](https://img.shields.io/badge/submits-never%20%E2%80%94%20your%20call-f5b95b)](#the-boundary-i-built-in-and-why)
 
-> **About CourseMate** — the server half of a screen-and-audio study agent: frame
-> classification, transcription, course memory, decision routing and the answer
-> cards the phone reads. **iOS capture:** [coursemate-ios](https://github.com/innotelinc/coursemate-ios)
-> · **Landing page:** [innotelinc.github.io/coursemate](https://innotelinc.github.io/coursemate/)
+**Landing page:** [innotelinc.github.io/coursemate](https://innotelinc.github.io/coursemate/) ·
+**iOS capture:** [coursemate-ios](https://github.com/innotelinc/coursemate-ios) ·
+**Known limits:** [below](#known-limits)
+
+</div>
 
 ---
 
@@ -46,6 +51,26 @@ only ever sees pixels and audio, so it behaves the same everywhere.
                               ▲
                      corrections & reflection
 ```
+
+## About CourseMate
+
+CourseMate is the half of the study agent that does the thinking. It classifies
+each changed screen with a vision model, transcribes the lecture, keeps the
+course in one SQLite file, routes by screen type to an answer, a note or an
+essay, and hands the result back as a card the client renders. It is deliberately
+not tied to a platform: it only ever sees pixels and audio, so a web LMS, a
+desktop app, a PDF and a TV behave the same.
+
+The boundary is structural. **It decides and drafts; it never submits.** A
+vision-driven clicker breaks on real LMS pages, and a wrong auto-submit on a
+graded test is unrecoverable — so `POST /api/ingest/frame` returns the decision
+as JSON and `COURSEMATE_ACTION_WEBHOOK` forwards it to a URL you own. The last
+step is yours, on purpose.
+
+Currently at **v0.1.0**: watch, listen, remember, decide, correct and reflect all
+work, study packs export even with the model unreachable (marked `degraded`
+rather than invented), and `npm test` drives every route against a local mock
+gateway — no network, no keys.
 
 ## What it actually does
 
@@ -270,11 +295,34 @@ not prove the model can read a quiz — pass a real screenshot for that.
 | [README.md#configuration](README.md) | every environment variable it reads |
 | [capture/README.md](capture/README.md) | the capture contract for any client |
 
+## Known limits
+
+- **It does not submit anything.** Answers arrive as cards you click and essays as
+  text you copy; wiring the last step is yours, through the decision JSON or
+  `COURSEMATE_ACTION_WEBHOOK`.
+- **Mobile browsers cannot capture the screen.** Neither iOS nor Android Chrome
+  exposes it, so a phone needs the ReplayKit extension
+  ([coursemate-ios](https://github.com/innotelinc/coursemate-ios)) or the Android
+  path in [capture/README.md](capture/README.md).
+- **Answer quality is the model's.** When the vision model returns an option that
+  was not on screen the card is downgraded to `needs you` instead of guessing, so
+  a bad model shows up as cards that need you, not as confident wrong answers.
+- **Transcription is the usual casualty on restricted gateways.** If no Whisper
+  model is reachable on your key it falls back to inline audio on a multimodal
+  model — which is why the default model does both — and `npm run live-check`
+  names which one you actually got.
+- **One host, one file.** Memory is `data/coursemate.db` on the machine running
+  the server; `COURSEMATE_TOKEN` is a bearer token, not a multi-user account
+  system, and the server binds `127.0.0.1` unless told otherwise.
+- **The essay route needs material.** With no transcript, slides or readings it
+  has nothing to cite and the draft reads generic — that is the honest failure,
+  not a bug.
+
 ## License
 
-MIT — see [LICENSE](LICENSE). No vendored upstream code.
+MIT — see [LICENSE](LICENSE). Copyright © 2026 Innotel Inc. No vendored upstream code.
 
-*CourseMate — watch it, listen to it, answer it. © 2026 Darnel Hunter*
+*CourseMate — watch it, listen to it, answer it.*
 
 ## 🏛️ Platform stack
 
