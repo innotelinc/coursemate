@@ -62,10 +62,19 @@ test('health reports the gateway and an empty memory', async () => {
   assert.equal(body.counters.decisions, 0);
 });
 
-test('the capture page is served', async () => {
-  const res = await fetch(`${base}/`);
-  assert.equal(res.status, 200);
-  const html = await res.text();
+test('the root is the landing page and the capture page lives at /desk', async () => {
+  // A stranger on the product's own address gets the product, never the control
+  // desk — so the desk's marker must be absent from the root, not just present
+  // somewhere.
+  const root = await fetch(`${base}/`);
+  assert.equal(root.status, 200);
+  const landing = await root.text();
+  assert.match(landing, /CourseMate/);
+  assert.doesNotMatch(landing, /getDisplayMedia/);
+
+  const desk = await fetch(`${base}/desk`);
+  assert.equal(desk.status, 200);
+  const html = await desk.text();
   assert.match(html, /CourseMate/);
   assert.match(html, /getDisplayMedia/);
 });

@@ -147,7 +147,9 @@ export function createApp(cfg, { fetchImpl } = {}) {
    */
   async function serveStatic(req, res, pathname) {
     let rel = pathname === '/' ? '/index.html' : pathname;
-    let roots = [PUBLIC_DIR, LANDING_DIR];
+    // The root is the landing page, so its tree is asked first and the desk's
+    // files are the fallback for anything the landing page does not carry.
+    let roots = [LANDING_DIR, PUBLIC_DIR];
 
     if (rel === '/desk' || rel.startsWith('/desk/')) {
       rel = rel.slice('/desk'.length) || '/index.html';
