@@ -82,6 +82,86 @@ test('push needs the switch, the key, the key id and the team id', () => {
   assert.equal(noTeam.push.enabled, false);
 });
 
+test('the key may arrive as contents, because a path cannot be a secret', () => {
+  const PEM =
+    '-----BEGIN PRIVATE KEY-----\nMIGTAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBHkwdwIBAQQg\n-----END PRIVATE KEY-----';
+  const base = {
+    COURSEMATE_PUSH: '1',
+    APNS_KEY_ID: 'ABC123DEFG',
+    APNS_TEAM_ID: 'TEAM123456',
+    COURSEMATE_DATA_DIR: tempDir('push-pem'),
+  };
+
+  const inline = loadConfig({ ...NO_APNS, ...base, APNS_KEY: PEM });
+  assert.equal(inline.push.enabled, true);
+  assert.equal(inline.push.keySource, 'APNS_KEY');
+  assert.equal(inline.push.keyPath, '', 'no file is needed');
+  assert.equal(inline.push.keyPem.trim(), PEM);
+
+  const b64 = loadConfig({ ...NO_APNS, ...base, APNS_KEY: Buffer.from(PEM).toString('base64') });
+  assert.match(b64.push.keyPem, /BEGIN PRIVATE KEY/, 'a base64 secret is decoded');
+
+  const escaped = loadConfig({ ...NO_APNS, ...base, APNS_KEY: PEM.replace(/\n/g, '\\n') });
+  assert.match(escaped.push.keyPem, /\n/, 'a literal backslash-n becomes a newline again');
+
+  // Contents win over a path, so a host that carries the key as a secret is not
+  // silently reading a stale file instead.
+  const both = loadConfig({ ...NO_APNS, ...base, APNS_KEY: PEM, APNS_KEY_PATH: 'ignored.p8' });
+  assert.equal(both.push.keySource, 'APNS_KEY');
+  assert.ok(both.push.keyPem);
+});
+
+test('what keeps push off is named, not just reported as off', () => {
+  const bare = loadConfig({ ...NO_APNS, COURSEMATE_DATA_DIR: tempDir('push-missing') });
+  const reasons = bare.push.missing.join('; ');
+  assert.equal(bare.push.enabled, false);
+  assert.match(reasons, /COURSEMATE_PUSH/);
+  assert.match(reasons, /no key/);
+  assert.match(reasons, /APNS_KEY_ID/);
+  assert.match(reasons, /APNS_TEAM_ID/);
+
+  // The state that looks configured from the outside: switch, ids and topic all
+  // set, key missing. This is the one health has to describe out loud.
+  const noKey = loadConfig({
+    ...NO_APNS,
+    COURSEMATE_PUSH: '1',
+    APNS_KEY_ID: 'ABC123DEFG',
+    APNS_TEAM_ID: 'TEAM123456',
+    APNS_TOPIC: 'us.innotel.coursemate',
+    COURSEMATE_DATA_DIR: tempDir('push-no-key'),
+  });
+  assert.equal(noKey.push.enabled, false);
+  assert.deepEqual(noKey.push.missing, [
+    'no key: set APNS_KEY (the .p8 contents) or APNS_KEY_PATH',
+  ]);
+
+  const complete = loadConfig({
+    ...NO_APNS,
+    COURSEMATE_PUSH: '1',
+    APNS_KEY: 'x',
+    APNS_KEY_ID: 'ABC123DEFG',
+    APNS_TEAM_ID: 'TEAM123456',
+    COURSEMATE_DATA_DIR: tempDir('push-complete'),
+  });
+  assert.equal(complete.push.enabled, true);
+  assert.deepEqual(complete.push.missing, []);
+});
+
+test('a key path that is not there yet is reported, not enforced', () => {
+  const cfg = loadConfig({
+    ...NO_APNS,
+    COURSEMATE_PUSH: '1',
+    APNS_KEY_PATH: join(tempDir('push-warn'), 'mounted-later.p8'),
+    APNS_KEY_ID: 'ABC123DEFG',
+    APNS_TEAM_ID: 'TEAM123456',
+    COURSEMATE_DATA_DIR: tempDir('push-warn-data'),
+  });
+  // Still enabled: a key mounted after start-up is legitimate, and delivery
+  // fails closed with "provider key unusable" if it never appears.
+  assert.equal(cfg.push.enabled, true);
+  assert.match(cfg.push.warnings.join('; '), /does not exist yet/);
+});
+
 test('only a confident, unflagged answer is worth interrupting for', () => {
   const cfg = minimalCfg();
 

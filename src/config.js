@@ -33,6 +33,85 @@ const num = (v, d) => {
 };
 const bool = (v, d) => (v === undefined || v === '' ? d : /^(1|true|yes|on)$/i.test(v));
 
+/**
+ * The APNs provider key, in whichever form this machine actually has it.
+ *
+ * Three sources, in order, because the same project runs from a laptop holding
+ * a downloaded file and from a host that only has environment secrets:
+ *   APNS_KEY       the .p8 contents (PEM, base64 of it, or \n-escaped one-line)
+ *   APNS_KEY_PATH  a path to the .p8
+ *   neither        AuthKey_<APNS_KEY_ID>.p8 next to this file
+ *
+ * A path stored in a secret is useless on a deployed host, so the contents are
+ * first-class rather than a convenience.
+ */
+function readApnsKey(env) {
+  const raw = (env.APNS_KEY || '').trim();
+  if (raw) {
+    let pem = raw.replace(/\\n/g, '\n');
+    if (!pem.includes('-----BEGIN')) {
+      // A secret is often the file base64-encoded, because PEM's newlines do
+      // not survive every secret store intact. Buffer.from ignores invalid
+      // characters rather than throwing, so a non-base64 value simply stays
+      // as-is and createPrivateKey reports the real problem.
+      const decoded = Buffer.from(pem, 'base64').toString('utf8');
+      if (decoded.includes('-----BEGIN')) pem = decoded;
+    }
+    return { keyPath: '', keyPem: pem, keySource: 'APNS_KEY' };
+  }
+
+  if (env.APNS_KEY_PATH) {
+    return { keyPath: resolve(ROOT, env.APNS_KEY_PATH), keyPem: '', keySource: 'APNS_KEY_PATH' };
+  }
+
+  if (env.APNS_KEY_ID) {
+    const conventional = join(ROOT, `AuthKey_${env.APNS_KEY_ID}.p8`);
+    if (existsSync(conventional)) {
+      return { keyPath: conventional, keyPem: '', keySource: 'AuthKey_<KEY_ID>.p8' };
+    }
+  }
+
+  return { keyPath: '', keyPem: '', keySource: '' };
+}
+
+/**
+ * Push is on only when a provider token can actually be signed. Everything that
+ * is absent is named, because "configured: false" alone sends you looking in
+ * four places.
+ */
+function pushConfig(env) {
+  const key = readApnsKey(env);
+  const missing = [];
+  if (!bool(env.COURSEMATE_PUSH, false)) missing.push('COURSEMATE_PUSH is not 1');
+  if (!key.keyPath && !key.keyPem) {
+    missing.push('no key: set APNS_KEY (the .p8 contents) or APNS_KEY_PATH');
+  }
+  if (!env.APNS_KEY_ID) missing.push('APNS_KEY_ID');
+  if (!env.APNS_TEAM_ID) missing.push('APNS_TEAM_ID');
+
+  const warnings = [];
+  if (key.keyPath && !existsSync(key.keyPath)) {
+    // Reported, not enforced: a key mounted after start-up is legitimate, and
+    // delivery already fails closed with "provider key unusable".
+    warnings.push(`APNS_KEY_PATH does not exist yet: ${key.keyPath}`);
+  }
+
+  return {
+    enabled: missing.length === 0,
+    keyPath: key.keyPath,
+    // Never surfaced over the wire; server.js reports key_source instead.
+    keyPem: key.keyPem,
+    keySource: key.keySource,
+    keyId: env.APNS_KEY_ID || '',
+    teamId: env.APNS_TEAM_ID || '',
+    topic: env.APNS_TOPIC || 'us.innotel.coursemate',
+    environment: env.APNS_ENVIRONMENT === 'production' ? 'production' : 'sandbox',
+    minConfidence: num(env.COURSEMATE_PUSH_MIN_CONFIDENCE, 0.6),
+    missing,
+    warnings,
+  };
+}
+
 export function loadConfig(overrides = {}) {
   // `.env` is the conventional name, but some environments strip dotfiles, so
   // `env.local` is read too and wins over it. Real environment variables win
@@ -74,19 +153,7 @@ export function loadConfig(overrides = {}) {
 
     // APNs is off unless a provider key is actually available: there is no
     // point advertising a push path that cannot sign a token.
-    push: {
-      enabled:
-        bool(env.COURSEMATE_PUSH, false) &&
-        Boolean(env.APNS_KEY_PATH) &&
-        Boolean(env.APNS_KEY_ID) &&
-        Boolean(env.APNS_TEAM_ID),
-      keyPath: env.APNS_KEY_PATH ? resolve(ROOT, env.APNS_KEY_PATH) : '',
-      keyId: env.APNS_KEY_ID || '',
-      teamId: env.APNS_TEAM_ID || '',
-      topic: env.APNS_TOPIC || 'us.innotel.coursemate',
-      environment: env.APNS_ENVIRONMENT === 'production' ? 'production' : 'sandbox',
-      minConfidence: num(env.COURSEMATE_PUSH_MIN_CONFIDENCE, 0.6),
-    },
+    push: pushConfig(env),
   };
 }
 

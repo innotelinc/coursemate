@@ -92,11 +92,17 @@ export function shouldPush(cfg, decision) {
 
 function providerToken(cfg) {
   const now = Math.floor(Date.now() / 1000);
-  if (cache.keyPath === cfg.push.keyPath && now - cache.mintedAt < TOKEN_TTL_SECONDS) {
+  // Identify the key by where it came from, since a key held in a secret has no
+  // path and would otherwise share the empty-string cache slot.
+  const keyRef = cfg.push.keyPath || cfg.push.keySource || 'APNS_KEY';
+  if (cache.keyPath === keyRef && now - cache.mintedAt < TOKEN_TTL_SECONDS) {
     return cache.jwt;
   }
 
-  const key = createPrivateKey(readFileSync(cfg.push.keyPath));
+  // Contents win over a path: a host that carries the key as a secret has no
+  // file to read.
+  const material = cfg.push.keyPem || readFileSync(cfg.push.keyPath);
+  const key = createPrivateKey(material);
   const header = b64url(JSON.stringify({ alg: 'ES256', kid: cfg.push.keyId }));
   const claims = b64url(JSON.stringify({ iss: cfg.push.teamId, iat: now }));
 
@@ -107,7 +113,7 @@ function providerToken(cfg) {
   });
 
   const jwt = `${header}.${claims}.${b64url(signature)}`;
-  cache = { keyPath: cfg.push.keyPath, jwt, mintedAt: now };
+  cache = { keyPath: keyRef, jwt, mintedAt: now };
   return jwt;
 }
 

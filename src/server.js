@@ -149,6 +149,12 @@ export function createApp(cfg, { fetchImpl } = {}) {
       configured: cfg.push.enabled,
       environment: cfg.push.environment,
       devices: store.countDevices(),
+      // Where the key came from, never the key itself. This is the difference
+      // between "the .p8 is on this host" and "the id and team are set but the
+      // key never arrived" — which otherwise look identical from a phone.
+      key_source: cfg.push.keySource || null,
+      missing: cfg.push.missing ?? [],
+      warnings: cfg.push.warnings ?? [],
       last_attempt: null,
     };
 
