@@ -393,3 +393,44 @@ test('a purchased gateway key is accepted when gateway keys are enabled', async 
   app.store.close();
   await new Promise((r) => gate.close(r));
 });
+
+test('a key the gateway stops accepting is refused on the very next request', async () => {
+  // The promise CourseMate sells is that a key dies when its term does, and the
+  // sweep is what ends it. A cached "yes" would keep a deleted key working for
+  // the length of the cache, so nothing is cached but a refusal.
+  const { createServer } = await import('node:http');
+  let live = true;
+  const gate = createServer((req, res) => {
+    const ok = live && req.headers.authorization === 'Bearer term-key';
+    res.writeHead(ok ? 200 : 401, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(ok ? { data: [] } : { error: 'invalid key' }));
+  });
+  await new Promise((r) => gate.listen(0, '127.0.0.1', r));
+  const gateUrl = `http://127.0.0.1:${gate.address().port}/v1`;
+
+  const cfg = loadConfig({
+    COURSEMATE_GATEWAY_URL: gateUrl,
+    COURSEMATE_API_KEY: 'test-key',
+    COURSEMATE_DATA_DIR: join(tmp, 'revocation'),
+    COURSEMATE_TOKEN: '',
+    COURSEMATE_GATEWAY_KEYS: '1',
+  });
+  const app = createApp(cfg);
+  const base = await listen(app);
+
+  const before = await fetch(`${base}/api/health`, {
+    headers: { Authorization: 'Bearer term-key' },
+  });
+  assert.equal(before.status, 200);
+
+  live = false; // the sweep deleted the key on the gateway
+
+  const after = await fetch(`${base}/api/health`, {
+    headers: { Authorization: 'Bearer term-key' },
+  });
+  assert.equal(after.status, 401);
+
+  await new Promise((r) => app.server.close(r));
+  app.store.close();
+  await new Promise((r) => gate.close(r));
+});

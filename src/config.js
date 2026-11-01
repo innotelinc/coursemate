@@ -129,6 +129,12 @@ export function loadConfig(overrides = {}) {
     port: num(env.COURSEMATE_PORT, 8790),
     token: env.COURSEMATE_TOKEN || '',
 
+    // One-shot hand-off for the APNs provider key. A GitHub secret can only be
+    // decrypted inside a workflow runner, so the key is posted here once, by a
+    // route that is closed unless this is set and that empties the nonce the
+    // moment it accepts a key. Empty means the route cannot be reached at all.
+    ingestNonce: env.COURSEMATE_INGEST_NONCE || '',
+
     // Purchased keys. CourseMate is sold the way Sage is: one gateway key per
     // session, minted on the OmniRoute gateway and deleted when the window ends.
     // With this on, a bearer that the gateway accepts is as good as the shared

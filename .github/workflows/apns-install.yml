@@ -1,0 +1,77 @@
+# One-shot: hand the APNs provider key to the server.
+#
+# A repository secret is decrypted only inside a workflow job, and the job does
+# not run on the server, so this is how the key crosses. Two candidates are
+# offered because both secrets exist and only Apple can say which one is a push
+# key: an APNs provider key is told BadDeviceToken for a token nobody owns, an
+# App Store Connect key is told InvalidProviderToken. Whichever authenticates is
+# the one the server keeps; the other is reported and discarded.
+#
+# Nothing here prints key material — only the verdicts.
+#
+# This workflow is temporary: once the key is installed it is deleted, along
+# with the route it calls.
+
+name: apns-install
+
+on:
+  workflow_dispatch:
+    inputs:
+      nonce:
+        description: Nonce currently set in COURSEMATE_INGEST_NONCE on the host
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  handoff:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Offer the keys, keep the one Apple accepts
+        env:
+          TOK: ${{ secrets.COURSEMATE_TOKEN }}
+          NONCE: ${{ inputs.nonce }}
+          APNS_KEY: ${{ secrets.APNS_KEY }}
+          APNS_KEY_ID: ${{ secrets.APNS_KEY_ID }}
+          APNS_TEAM_ID: ${{ secrets.APNS_TEAM_ID }}
+          APNS_TOPIC: ${{ secrets.APNS_TOPIC }}
+          APNS_ENVIRONMENT: ${{ secrets.APNS_ENVIRONMENT }}
+          ASC_KEY: ${{ secrets.APP_STORE_CONNECT_KEY }}
+          ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ASC_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -uo pipefail
+
+          # jq --arg keeps multi-line PEM intact and keeps the values out of the
+          # process table, which a curl -d "..." would not.
+          jq -n \
+            --arg a_key "$APNS_KEY" --arg a_id "$APNS_KEY_ID" --arg a_team "$APNS_TEAM_ID" \
+            --arg a_topic "${APNS_TOPIC:-us.innotel.coursemate}" --arg a_env "${APNS_ENVIRONMENT:-production}" \
+            --arg b_key "$ASC_KEY" --arg b_id "$ASC_KEY_ID" --arg b_team "$ASC_TEAM_ID" \
+            '{
+               candidates: [
+                 { label: "APNS_KEY",                p8: $a_key, key_id: $a_id, team_id: $a_team,
+                   topic: $a_topic, environment: $a_env },
+                 { label: "APP_STORE_CONNECT_KEY",   p8: $b_key, key_id: $b_id, team_id: $b_team,
+                   topic: $a_topic, environment: $a_env }
+               ]
+             }' > /tmp/candidates.json
+
+          echo "candidates offered: $(jq '[.candidates[] | .label] | join(", ")' /tmp/candidates.json)"
+          echo
+
+          code=$(curl -sS -m 120 -o /tmp/reply.json -w '%{http_code}' \
+            -X POST 'https://cm.innotel.tech/api/admin/apns-install' \
+            -H "Authorization: Bearer $TOK" \
+            -H "x-ingest-nonce: $NONCE" \
+            -H 'Content-Type: application/json' \
+            --data-binary @/tmp/candidates.json)
+
+          echo "http $code"
+          jq . /tmp/reply.json 2>/dev/null || cat /tmp/reply.json
+          rm -f /tmp/candidates.json /tmp/reply.json
+
+          # A refusal is not a failed run: it is the answer, and it belongs in
+          # the log rather than in a red X.
+          test "$code" = "200"
