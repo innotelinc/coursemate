@@ -11,6 +11,9 @@ import { makeStudy } from './study.js';
 import { log, warn, nowIso } from './util.js';
 
 const PUBLIC_DIR = join(ROOT, 'public');
+// The landing page keeps its own tree. It is served from this origin now, so a
+// visitor who is not the owner sees the product instead of the control desk.
+const LANDING_DIR = join(ROOT, 'web', 'landing');
 const MAX_BODY = 16 * 1024 * 1024; // a 1600x900 JPEG is well under this
 
 const MIME = {
@@ -137,22 +140,40 @@ export function createApp(cfg, { fetchImpl } = {}) {
     return true;
   }
 
+  /**
+   * Two trees on one origin: `/` is the landing page, `/desk` is the control
+   * desk the app opens, and assets fall through public/ then web/landing/ so
+   * neither page has to know which tree it lives in.
+   */
   async function serveStatic(req, res, pathname) {
-    const rel = pathname === '/' ? '/index.html' : pathname;
-    // Resolve inside PUBLIC_DIR only.
-    const target = normalize(join(PUBLIC_DIR, rel));
-    if (!target.startsWith(PUBLIC_DIR + '/')) return json(res, 403, { error: 'forbidden' });
-    if (!existsSync(target)) return json(res, 404, { error: 'not found' });
-    try {
-      const buf = await readFile(target);
-      res.writeHead(200, {
-        'Content-Type': MIME[extname(target)] || 'application/octet-stream',
-        'Content-Length': buf.length,
-      });
-      res.end(buf);
-    } catch (e) {
-      json(res, 500, { error: e.message });
+    let rel = pathname === '/' ? '/index.html' : pathname;
+    let roots = [PUBLIC_DIR, LANDING_DIR];
+
+    if (rel === '/desk' || rel.startsWith('/desk/')) {
+      rel = rel.slice('/desk'.length) || '/index.html';
+      if (rel === '/') rel = '/index.html';
+      // The desk keeps its assets beside it, never in the landing tree.
+      roots = [PUBLIC_DIR];
     }
+
+    for (const root of roots) {
+      const target = normalize(join(root, rel));
+      if (!target.startsWith(root + '/')) return json(res, 403, { error: 'forbidden' });
+      if (!existsSync(target)) continue;
+      try {
+        const buf = await readFile(target);
+        res.writeHead(200, {
+          'Content-Type': MIME[extname(target)] || 'application/octet-stream',
+          'Content-Length': buf.length,
+        });
+        res.end(buf);
+      } catch (e) {
+        json(res, 500, { error: e.message });
+      }
+      return;
+    }
+
+    return json(res, 404, { error: 'not found' });
   }
 
   const sessionFor = (id) => {
