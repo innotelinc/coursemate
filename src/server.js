@@ -97,8 +97,7 @@ export function createApp(cfg, { fetchImpl } = {}) {
   // A key sold for the hosted server is an OmniRoute key: minted by Magnate when
   // Stripe says the money arrived, revoked when the session ends. The server has
   // no account list, so it asks the gateway the key was minted on — one cheap
-  // call to /models with the key as the bearer. Verdicts are cached briefly so a
-  // burst of frames does not become a burst of gateway requests.
+  // call to /models with the key as the bearer.
   // Only REFUSALS are remembered, and only briefly. A cached "yes" outlives the
   // thing it describes: with a five-minute positive verdict a key whose term had
   // ended — or that the sweep had just deleted — kept answering here for up to
