@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="build/icon.png" width="96" alt="CourseMate icon">
+
 # CourseMate
 
 [![CI](https://github.com/innotelinc/coursemate/actions/workflows/ci.yml/badge.svg)](https://github.com/innotelinc/coursemate/actions/workflows/ci.yml)
@@ -21,6 +23,8 @@ answer, a note or a drafted essay in your own voice.
 **Landing page:** [innotelinc.github.io/coursemate](https://innotelinc.github.io/coursemate/) ·
 **iOS capture:** [coursemate-ios](https://github.com/innotelinc/coursemate-ios) ·
 **Known limits:** [below](#known-limits)
+
+An **Innotel Labs** product · [innotel.us](https://innotel.us)
 
 </div>
 
@@ -320,7 +324,8 @@ not prove the model can read a quiz — pass a real screenshot for that.
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Copyright © 2026 Innotel Inc. No vendored upstream code.
+MIT — see [LICENSE](LICENSE). Copyright © 2026 Innotel Inc. An **Innotel Labs**
+product — [innotel.us](https://innotel.us). No vendored upstream code.
 
 *CourseMate — watch it, listen to it, answer it.*
 
