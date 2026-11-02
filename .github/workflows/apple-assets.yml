@@ -1,16 +1,26 @@
 name: apple-assets
 
-# Read-only: what signing material does this account actually hold?
+# What signing material does this account actually hold, and which of it is junk?
 #
 # The release stops when Apple says "you have reached the maximum number of
 # certificates", and that sentence is all it says — no count, no list, no clue
 # which of them are already dead. Asking the API turns it into a specific
-# decision: these are the certificates, these expired years ago, these were made
-# by CI runs that no longer exist.
+# decision: these are the certificates, these expired, these were minted by CI
+# runs whose private keys no longer exist.
 #
-# Nothing here creates, revokes or downloads a private key.
+# Listing is read-only. Revoking requires ids copied from that listing, and is a
+# dry run unless `confirm` is exactly `true`.
 on:
   workflow_dispatch:
+    inputs:
+      revoke:
+        description: Comma-separated certificate ids to revoke (blank = list only)
+        required: false
+        default: ""
+      confirm:
+        description: Type true to actually revoke; anything else is a dry run
+        required: false
+        default: "false"
 
 permissions:
   contents: read
@@ -49,3 +59,15 @@ jobs:
             --key "$KEY_PATH" \
             --kid "$ASC_KEY_ID" \
             --issuer "$ASC_ISSUER_ID"
+
+      # Only runs when ids are given, so the default dispatch is a pure listing.
+      - name: Revoke the named certificates
+        if: ${{ github.event.inputs.revoke != '' }}
+        run: |
+          set -uo pipefail
+          node tools/asc.mjs revoke \
+            --key "$KEY_PATH" \
+            --kid "$ASC_KEY_ID" \
+            --issuer "$ASC_ISSUER_ID" \
+            --id "${{ github.event.inputs.revoke }}" \
+            --confirm "${{ github.event.inputs.confirm }}"

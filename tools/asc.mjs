@@ -19,7 +19,8 @@ function usage() {
   console.error(`usage:
   node tools/asc.mjs probe  --key <p8> --kid <id> --issuer <uuid> [--bundle <bundleId>]
   node tools/asc.mjs builds --key <p8> --kid <id> --issuer <uuid> [--bundle <bundleId>] [--watch <build>] [--timeout <seconds>]
-  node tools/asc.mjs certs  --key <p8> --kid <id> --issuer <uuid>`);
+  node tools/asc.mjs certs  --key <p8> --kid <id> --issuer <uuid>
+  node tools/asc.mjs revoke --key <p8> --kid <id> --issuer <uuid> --id <certId>[,<certId>] [--confirm] [--allow-distribution]`);
 }
 
 function parseArgs(argv) {
@@ -223,7 +224,9 @@ async function certs(args) {
   console.log(`${rows.length} certificate(s) on this account`);
   for (const r of rows) {
     const state = r.expired ? 'EXPIRED' : 'valid  ';
-    console.log(`  ${state}  ${r.type.padEnd(20)} ${String(r.expiry).slice(0, 10)}  ${r.id}  ${r.name}`);
+    // Labelled rather than columnar: these ids get copied into a revoke call, and
+    // a misread column would revoke the wrong certificate.
+    console.log(`  ${state}  ${r.type.padEnd(20)} expires ${String(r.expiry).slice(0, 10)}  id=${r.id}  ${r.name}`);
   }
 
   const byType = new Map();
@@ -250,6 +253,79 @@ async function certs(args) {
   return 0;
 }
 
+/**
+ * Revoke named certificates, and never by inference.
+ *
+ * There is no "revoke the stale ones" here on purpose: a certificate is signing
+ * material, and a wrong guess breaks a build that currently works. Callers name
+ * ids they got from `certs`, see the plan, and pass --confirm to act. A dry run
+ * happens by default so the first invocation cannot destroy anything.
+ *
+ * Distribution certificates are refused without --allow-distribution: they are
+ * what already-shipped builds were signed with, unlike the development ones an
+ * ephemeral runner leaves behind.
+ */
+async function revoke(args) {
+  const jwt = sign(args);
+
+  const list = await request('/v1/certificates?limit=200', jwt);
+  if (list.status !== 200) {
+    console.error(explain(list.status, list.body));
+    return 1;
+  }
+
+  const all = (list.body.data ?? []).map((cert) => ({
+    id: cert.id,
+    type: cert.attributes?.certificateType ?? '?',
+    expiry: cert.attributes?.expirationDate ?? '',
+    name: cert.attributes?.displayName ?? cert.attributes?.name ?? '',
+  }));
+
+  const wanted = args.id && args.id !== 'true'
+    ? String(args.id).split(',').map((value) => value.trim()).filter(Boolean)
+    : [];
+
+  if (wanted.length === 0) {
+    console.error('refusing to guess: pass --id <certificateId>[,<certificateId>]');
+    console.error('ids come from: node tools/asc.mjs certs …');
+    return 1;
+  }
+
+  const missing = wanted.filter((id) => !all.some((cert) => cert.id === id));
+  if (missing.length > 0) {
+    console.error(`not on this account: ${missing.join(', ')}`);
+    return 1;
+  }
+
+  const targets = all.filter((cert) => wanted.includes(cert.id));
+  const distribution = targets.filter((cert) => /DISTRIBUTION/i.test(cert.type));
+  if (distribution.length > 0 && args['allow-distribution'] !== 'true') {
+    for (const cert of distribution) console.error(`refused ${cert.type} ${cert.id} — pass --allow-distribution to include it`);
+    return 1;
+  }
+
+  for (const cert of targets) {
+    console.log(`  ${cert.type.padEnd(20)} expires ${String(cert.expiry).slice(0, 10)}  ${cert.id}  ${cert.name}`);
+  }
+
+  if (args.confirm !== 'true') {
+    console.log(`\ndry run: ${targets.length} certificate(s) would be revoked. Re-run with --confirm.`);
+    return 0;
+  }
+
+  let failures = 0;
+  for (const cert of targets) {
+    const res = await fetch(`${API}/v1/certificates/${cert.id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${jwt}` },
+    });
+    const ok = res.status === 204 || res.status === 200;
+    console.log(`${ok ? 'revoked' : 'failed '} ${cert.id} (HTTP ${res.status})`);
+    if (!ok) failures += 1;
+  }
+  return failures > 0 ? 1 : 0;
+}
+
 async function main() {
   const [command, ...rest] = process.argv.slice(2);
   const args = parseArgs(rest);
@@ -267,11 +343,15 @@ async function main() {
     bundle: args.bundle,
     watch: args.watch,
     timeout: args.timeout,
+    id: args.id,
+    confirm: args.confirm,
+    'allow-distribution': args['allow-distribution'],
   };
 
   if (command === 'probe') return probe(credentials);
   if (command === 'builds') return builds(credentials);
   if (command === 'certs') return certs(credentials);
+  if (command === 'revoke') return revoke(credentials);
   usage();
   return 1;
 }
