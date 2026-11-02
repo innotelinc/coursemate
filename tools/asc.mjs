@@ -195,7 +195,10 @@ async function builds(args) {
 async function certs(args) {
   const jwt = sign(args);
 
-  const list = await request('/v1/certificates?limit=200&sort=expirationDate', jwt);
+  // No `sort` here: certificates do not accept one (Apple answers
+  // PARAMETER_ERROR.INVALID for `sort=expirationDate`), so ordering is done
+  // below where it also accounts for expired entries.
+  const list = await request('/v1/certificates?limit=200', jwt);
   if (list.status !== 200) {
     console.error(explain(list.status, list.body));
     return 1;
@@ -214,6 +217,8 @@ async function certs(args) {
       expired: Boolean(expires && expires.getTime() < now),
     };
   });
+
+  rows.sort((a, b) => String(a.expiry).localeCompare(String(b.expiry)));
 
   console.log(`${rows.length} certificate(s) on this account`);
   for (const r of rows) {
