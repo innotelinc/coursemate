@@ -1,0 +1,51 @@
+name: apple-assets
+
+# Read-only: what signing material does this account actually hold?
+#
+# The release stops when Apple says "you have reached the maximum number of
+# certificates", and that sentence is all it says — no count, no list, no clue
+# which of them are already dead. Asking the API turns it into a specific
+# decision: these are the certificates, these expired years ago, these were made
+# by CI runs that no longer exist.
+#
+# Nothing here creates, revokes or downloads a private key.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apple-assets
+  cancel-in-progress: true
+
+jobs:
+  assets:
+    runs-on: ubuntu-latest
+    env:
+      ASC_KEY: ${{ secrets.APP_STORE_CONNECT_KEY }}
+      ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Write the key
+        run: |
+          set -euo pipefail
+          for name in ASC_KEY ASC_KEY_ID ASC_ISSUER_ID; do
+            [ -n "${!name:-}" ] || { echo "::error::missing secret for $name"; exit 1; }
+          done
+          KEY="$RUNNER_TEMP/AuthKey.p8"
+          printf '%s\n' "$ASC_KEY" > "$KEY"
+          chmod 600 "$KEY"
+          openssl pkey -in "$KEY" -noout >/dev/null
+          echo "KEY_PATH=$KEY" >> "$GITHUB_ENV"
+
+      - name: Certificates and profiles
+        run: |
+          set -uo pipefail
+          node tools/asc.mjs certs \
+            --key "$KEY_PATH" \
+            --kid "$ASC_KEY_ID" \
+            --issuer "$ASC_ISSUER_ID"

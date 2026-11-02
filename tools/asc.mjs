@@ -18,7 +18,8 @@ const DEFAULT_BUNDLE = 'us.innotel.coursemate';
 function usage() {
   console.error(`usage:
   node tools/asc.mjs probe  --key <p8> --kid <id> --issuer <uuid> [--bundle <bundleId>]
-  node tools/asc.mjs builds --key <p8> --kid <id> --issuer <uuid> [--bundle <bundleId>] [--watch <build>] [--timeout <seconds>]`);
+  node tools/asc.mjs builds --key <p8> --kid <id> --issuer <uuid> [--bundle <bundleId>] [--watch <build>] [--timeout <seconds>]
+  node tools/asc.mjs certs  --key <p8> --kid <id> --issuer <uuid>`);
 }
 
 function parseArgs(argv) {
@@ -185,6 +186,65 @@ async function builds(args) {
   }
 }
 
+/**
+ * Signing assets, read-only. "Revoke an unused certificate" is only actionable
+ * if you can see which ones exist, when they were made and whether they are
+ * already dead — an expired certificate costs a slot in nobody's accounting and
+ * is pure noise to the person being asked to delete something.
+ */
+async function certs(args) {
+  const jwt = sign(args);
+
+  const list = await request('/v1/certificates?limit=200&sort=expirationDate', jwt);
+  if (list.status !== 200) {
+    console.error(explain(list.status, list.body));
+    return 1;
+  }
+
+  const now = Date.now();
+  const rows = (list.body.data ?? []).map((cert) => {
+    const a = cert.attributes ?? {};
+    const expires = a.expirationDate ? new Date(a.expirationDate) : null;
+    return {
+      id: cert.id,
+      type: a.certificateType ?? '?',
+      serial: a.serialNumber ?? '',
+      expiry: a.expirationDate ?? '',
+      name: a.displayName ?? a.name ?? '',
+      expired: Boolean(expires && expires.getTime() < now),
+    };
+  });
+
+  console.log(`${rows.length} certificate(s) on this account`);
+  for (const r of rows) {
+    const state = r.expired ? 'EXPIRED' : 'valid  ';
+    console.log(`  ${state}  ${r.type.padEnd(20)} ${String(r.expiry).slice(0, 10)}  ${r.id}  ${r.name}`);
+  }
+
+  const byType = new Map();
+  for (const r of rows) {
+    const live = r.expired ? 0 : 1;
+    byType.set(r.type, (byType.get(r.type) ?? 0) + live);
+  }
+  console.log('\nlive counts by type:');
+  for (const [type, count] of byType) console.log(`  ${type.padEnd(20)} ${count}`);
+
+  const profiles = await request('/v1/profiles?limit=200', jwt);
+  if (profiles.status !== 200) {
+    console.log(`\nprofiles unavailable: ${profiles.status}`);
+    return 0;
+  }
+
+  const byKind = new Map();
+  for (const p of profiles.body.data ?? []) {
+    const kind = p.attributes?.profileType ?? '?';
+    byKind.set(kind, (byKind.get(kind) ?? 0) + 1);
+  }
+  console.log(`\n${(profiles.body.data ?? []).length} provisioning profile(s)`);
+  for (const [kind, count] of byKind) console.log(`  ${kind.padEnd(20)} ${count}`);
+  return 0;
+}
+
 async function main() {
   const [command, ...rest] = process.argv.slice(2);
   const args = parseArgs(rest);
@@ -206,6 +266,7 @@ async function main() {
 
   if (command === 'probe') return probe(credentials);
   if (command === 'builds') return builds(credentials);
+  if (command === 'certs') return certs(credentials);
   usage();
   return 1;
 }
