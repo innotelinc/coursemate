@@ -183,6 +183,7 @@ jobs:
         working-directory: ios
         run: |
           set -o pipefail
+          status=0
           xcodebuild archive \
             -project CourseMate.xcodeproj \
             -scheme CourseMate \
@@ -196,7 +197,22 @@ jobs:
             DEVELOPMENT_TEAM="$TEAM_ID" \
             MARKETING_VERSION="$MARKETING_VERSION" \
             CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
-            2>&1 | tail -n 250
+            2>&1 | tee "$RUNNER_TEMP/archive.log" | tail -n 250 || status=$?
+
+          # The one signing failure that is not a signing problem. Automatic
+          # signing mints a certificate per ephemeral runner, because the private
+          # key is gone with the previous one, so a long-lived account eventually
+          # hits Apple's cap. Xcode reports that once per target and never says
+          # what to do, which reads like a misconfiguration of this workflow.
+          if [ "$status" -ne 0 ]; then
+            if grep -q 'maximum number of certificates' "$RUNNER_TEMP/archive.log"; then
+              echo "::error::Apple is at its distribution-certificate limit, so automatic signing cannot create another one. The code and the App Store Connect key are both fine."
+              echo "::error::Fix: revoke an unused Apple Distribution certificate at developer.apple.com > Certificates, Identifiers & Profiles, then re-run this workflow."
+              echo "::error::Revoking a certificate does not affect builds already uploaded to TestFlight."
+              echo "::error::Durable fix: export one certificate and key as a .p12, store it as a secret, and have this job import it, so runs share an identity instead of creating certificates."
+            fi
+            exit "$status"
+          fi
 
       - name: Export IPA
         working-directory: ios
