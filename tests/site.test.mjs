@@ -59,6 +59,9 @@ before(async () => {
     COURSEMATE_API_KEY: 'test-key',
     COURSEMATE_DATA_DIR: tmp,
     COURSEMATE_TOKEN: 'the-shared-token',
+    // Opted in explicitly, because the default is off: a redirect to a name
+    // that is not live takes the site down, so it is never on by accident.
+    COURSEMATE_LEGACY_HOSTS: 'cm.innotel.tech',
   });
 
   app = createApp(cfg);

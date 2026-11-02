@@ -133,9 +133,13 @@ export function loadConfig(overrides = {}) {
     // places that must not disagree — the redirect from the old host, the links
     // the site renders, and the share card — so it is read once here.
     publicUrl: (env.COURSEMATE_PUBLIC_URL || 'https://cm.innotel.us').replace(/\/$/, ''),
-    // Hosts that used to serve this app. They answer with a 301 to `publicUrl`,
-    // so a phone that still has the old endpoint keeps working through the move.
-    legacyHosts: (env.COURSEMATE_LEGACY_HOSTS || 'cm.innotel.tech')
+    // Hosts that used to serve this app. Empty by default, and that default is
+    // the point: redirecting a live name to one that does not resolve yet takes
+    // the whole product offline — a 301 is answered before anything is served,
+    // so "the new name is not up" reads as "CourseMate is down". Turn this on
+    // with COURSEMATE_LEGACY_HOSTS=cm.innotel.tech once `scripts/edge-host.sh`
+    // reports the new name answering 200.
+    legacyHosts: (env.COURSEMATE_LEGACY_HOSTS || '')
       .split(',')
       .map((h) => h.trim().toLowerCase())
       .filter(Boolean),
