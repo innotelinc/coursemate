@@ -198,9 +198,35 @@ export function createApp(cfg, { fetchImpl } = {}) {
     return json(res, 404, { error: 'not found' });
   }
 
+  // Sessions are cheap to create and every frame keeps one alive, so the table
+  // would otherwise grow without limit. Pruning keeps what is course-scoped
+  // (notes, lessons, persona drift) and drops what belonged to a lecture that is
+  // over. Run on boot and every six hours; `unref` so housekeeping never holds a
+  // process — or a test run — open.
+  const prune = () => {
+    try {
+      const removed = store.pruneSessions(cfg.sessionRetentionDays);
+      if (removed.sessions) {
+        log('store', `pruned ${removed.sessions} session(s) older than ${cfg.sessionRetentionDays}d`);
+      }
+    } catch (e) {
+      warn('store', 'prune failed', e.message);
+    }
+  };
+  prune();
+  setInterval(prune, 6 * 3_600_000).unref?.();
+
   const sessionFor = (id) => {
     const s = store.getSession(id);
     if (!s) throw Object.assign(new Error(`unknown session ${id}`), { status: 404 });
+    // A session is one lecture. An id from a previous day is refused with the
+    // same 404 an unknown one gets, so a capture source that outlived its
+    // lecture stops instead of writing into a session nobody is watching. The
+    // phone's broadcast extension treats this 404 as "session gone" on purpose.
+    const started = Date.parse(s.started_at) || 0;
+    if (cfg.sessionMaxAgeHours > 0 && Date.now() - started > cfg.sessionMaxAgeHours * 3_600_000) {
+      throw Object.assign(new Error(`session ${id} has expired`), { status: 404 });
+    }
     store.touchSession(id);
     return s;
   };
@@ -317,6 +343,28 @@ export function createApp(cfg, { fetchImpl } = {}) {
       push: await pushStatus(),
       counters: store.totals(),
     }),
+
+    // Which session is receiving frames right now. The desk asks instead of
+    // assuming its own session is the one being filled: a broadcast can outlive
+    // the session it was started for, and that mismatch is exactly what looks
+    // like "the extension is not posting".
+    'GET /api/sessions': async ({ query }) => {
+      const limit = Math.max(1, Math.min(50, Number(query.get('limit')) || 10));
+      const now = Date.now();
+      const sessions = store.recentSessions(limit).map((s) => {
+        const lastSeen = Date.parse(s.last_seen_at || s.started_at) || 0;
+        const idle = Math.max(0, (now - lastSeen) / 1000);
+        return {
+          id: s.id,
+          course: s.course,
+          started_at: s.started_at,
+          last_seen_at: s.last_seen_at,
+          idle_seconds: Math.round(idle),
+          live: idle <= cfg.sessionLiveSeconds,
+        };
+      });
+      return { sessions, live_window_seconds: cfg.sessionLiveSeconds };
+    },
 
     'POST /api/session': async ({ body }) => {
       const course = String(body.course || '').trim();
@@ -443,9 +491,15 @@ export function createApp(cfg, { fetchImpl } = {}) {
     // only: a 301 on a POST is replayed as a GET by every client, which would
     // drop the body and report success for a request that never happened.
     const host = (req.headers.host || '').split(':')[0].toLowerCase();
+    // Never an API call. A redirect to another host drops the `Authorization`
+    // header — URLSession does it, and so does curl without --location-trusted —
+    // so an old install or a page that still names the legacy host turned a
+    // perfectly good key into "401 unauthorized" on the phone. The redirect
+    // exists to consolidate the *site*, not to break the clients talking to it.
     if (
       cfg.publicUrl &&
       cfg.legacyHosts.includes(host) &&
+      !url.pathname.startsWith('/api/') &&
       (req.method === 'GET' || req.method === 'HEAD')
     ) {
       res.writeHead(301, {

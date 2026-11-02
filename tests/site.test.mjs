@@ -97,10 +97,30 @@ test('the desk is served at /desk, from its own tree', async () => {
   assert.notEqual(desk.body, root.body, '/desk is not the landing page');
 });
 
+test('the desk takes an API key, which is the only way in on the hosted server', async () => {
+  const desk = await ask('/desk');
+  assert.equal(desk.status, 200);
+  // Every non-public route answers 401 without a bearer, so if the desk cannot
+  // take a key a buyer holding a receipt has no way in at all.
+  assert.match(desk.body, /id="apiKey"/);
+  assert.match(desk.body, /Authorization = 'Bearer '/);
+  assert.match(desk.body, /localStorage/);
+});
+
 test('the old host redirects to the canonical one, path and query intact', async () => {
   const res = await ask('/desk?session=abc', { host: 'cm.innotel.tech' });
   assert.equal(res.status, 301);
   assert.equal(res.headers.location, 'https://cm.innotel.us/desk?session=abc');
+});
+
+test('an API call on the old host is answered, never redirected', async () => {
+  // A redirect to another host drops `Authorization`, so a 301 here is what
+  // made a valid key look like "401 unauthorized" in the iOS app. The status is
+  // 401 because this request carries no bearer, which is the point: it reached
+  // the server instead of being bounced.
+  const res = await ask('/api/health', { host: 'cm.innotel.tech' });
+  assert.equal(res.status, 401);
+  assert.equal(res.headers.location, undefined);
 });
 
 test('a POST to the old host is answered, not redirected', async () => {

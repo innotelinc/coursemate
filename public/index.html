@@ -68,6 +68,24 @@
 
 <main>
   <section class="col">
+    <div class="card" id="keyCard">
+      <div class="row" style="justify-content:space-between">
+        <h3 style="margin:0">API key</h3>
+        <span class="muted" id="keyState">not set</span>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <input id="apiKey" type="password" autocomplete="off" autocapitalize="off" spellcheck="false"
+               placeholder="Paste the key from your receipt" style="flex:1;min-width:220px">
+        <button id="btnSaveKey" class="primary">Save key</button>
+        <button id="btnClearKey" class="ghost" disabled>Forget</button>
+      </div>
+      <div class="muted" style="margin-top:8px" id="keyHint">
+        Keys are sold at <a href="/" style="color:var(--accent)">coursemate.innotel.tech</a> and shown on your receipt.
+        It is kept in this browser and sent only to this desk.
+      </div>
+      <div class="err-box" id="keyErr"></div>
+    </div>
+
     <div class="card">
       <div class="row">
         <input id="course" placeholder="Course — e.g. BIOL 201 Cell Biology" style="flex:1;min-width:220px">
@@ -84,6 +102,18 @@
         it shows you the answer, it never submits for you.
       </div>
       <video id="preview" muted playsinline style="display:none"></video>
+    </div>
+
+    <div class="card">
+      <div class="row" style="justify-content:space-between">
+        <h3 style="margin:0">Capture source</h3>
+        <span class="muted" id="liveCount">—</span>
+      </div>
+      <div id="live"><div class="empty">Nothing is posting yet.</div></div>
+      <div class="muted" style="margin-top:8px">
+        Which session is actually receiving frames, read from the server rather than assumed: a broadcast can
+        outlive the session it was started for, and this desk only shows the session it is watching.
+      </div>
     </div>
 
     <div class="card">
@@ -125,7 +155,28 @@
 <script>
 'use strict';
 const $ = (id) => document.getElementById(id);
-const state = { sessionId: null, course: '', display: null, audioStream: null, recorder: null, timer: null, lastHash: null, busy: false, micOn: false, micStream: null, decisions: 0 };
+const state = { sessionId: null, course: '', display: null, audioStream: null, recorder: null, timer: null, lastHash: null, busy: false, micOn: false, micStream: null, decisions: 0, key: '' };
+
+// A bought key is the only way in on the hosted server, so the desk owns the
+// entry point: it is stored per browser, never cached on the server, and sent as
+// the bearer on every call that leaves this page.
+const KEY_STORE = 'coursemate.api_key';
+function readKey() {
+  try { return localStorage.getItem(KEY_STORE) || ''; } catch { return ''; }
+}
+function writeKey(value) {
+  try { value ? localStorage.setItem(KEY_STORE, value) : localStorage.removeItem(KEY_STORE); } catch { /* private mode: key lives for this tab only */ }
+}
+function authHeaders(extra) {
+  const headers = { ...(extra || {}) };
+  if (state.key) headers.Authorization = 'Bearer ' + state.key;
+  return headers;
+}
+function paintKey() {
+  $('apiKey').value = state.key;
+  $('keyState').textContent = state.key ? 'saved in this browser' : 'not set';
+  $('btnClearKey').disabled = !state.key;
+}
 
 function logLine(msg) {
   const el = $('log');
@@ -139,11 +190,54 @@ function setStatus(kind, text) {
 async function post(path, body) {
   const res = await fetch(path, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(body || {}),
   });
+  if (res.status === 401) throw new Error('that key was refused — paste your current key above');
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
   return res.json();
+}
+
+// Asks the server what it thinks of the stored key. Reaching this at all means
+// the bearer was accepted; `checked` says whether the gateway was asked or this
+// is a development server that lets everything through.
+async function checkKey() {
+  try {
+    const res = await fetch('/api/key', { headers: authHeaders() });
+    if (res.status === 401) {
+      $('keyErr').textContent = 'That key was refused. Check it against your receipt and paste it again.';
+      return false;
+    }
+    const out = await res.json();
+    $('keyErr').textContent = '';
+    $('keyHint').textContent = out.checked
+      ? `Key accepted by ${out.gateway}.${out.term_days ? ' It is quoted as ' + out.term_days + ' days.' : ''}`
+      : 'Key saved. This server does not check keys against the gateway.'.replace('does not', 'does not');
+    return true;
+  } catch (e) {
+    $('keyErr').textContent = 'Could not reach the desk: ' + e.message;
+    return false;
+  }
+}
+
+async function saveKey() {
+  const value = $('apiKey').value.trim();
+  $('keyErr').textContent = '';
+  if (!value) { $('keyErr').textContent = 'Paste a key first — it is on the receipt from your purchase.'; return; }
+  state.key = value;
+  writeKey(value);
+  paintKey();
+  if (await checkKey()) { await connect(); logLine('key saved'); }
+}
+
+function forgetKey() {
+  state.key = '';
+  writeKey('');
+  paintKey();
+  $('keyErr').textContent = '';
+  $('keyHint').textContent = 'Key forgotten. Paste another to keep working.';
+  setStatus('', 'add your API key');
+  logLine('key forgotten');
 }
 
 // 8x8 average hash — lets us skip screens that have not changed at all.
@@ -280,7 +374,40 @@ function renderDecision(dec, obs) {
 
 const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+// Which session is actually being filled? A broadcast can outlive the session it
+// was started for, and a desk showing one session while another receives the
+// frames is the failure that reads as "the extension is not posting". The server
+// knows, because every frame and audio chunk touches its session.
+async function refreshLive() {
+  if (!state.key) return;
+  try {
+    const res = await fetch('/api/sessions', { headers: authHeaders() });
+    if (!res.ok) return;
+    const { sessions, live_window_seconds: liveWindow } = await res.json();
+    const live = sessions.filter((s) => s.live);
+    $('liveCount').textContent = live.length ? `${live.length} live` : 'idle';
+    if (!live.length) {
+      $('live').innerHTML = `<div class="empty">No capture source is posting right now — a session counts as live for ${liveWindow}s after its last frame.</div>`;
+      return;
+    }
+    const rows = live.map((s) => {
+      const mine = s.id === state.sessionId;
+      const age = s.idle_seconds < 2 ? 'just now' : `${s.idle_seconds}s ago`;
+      return `<div class="stat"><span>${mine ? '●' : '○'} <b style="font:12px/1 var(--mono)">${escapeHtml(s.id)}</b> ${escapeHtml(s.course)}</span>` +
+        `<span class="muted">${age}</span></div>`;
+    }).join('');
+    const foreign = live.filter((s) => s.id !== state.sessionId);
+    const warning = foreign.length
+      ? `<div class="err-box">Posting to ${foreign.map((s) => escapeHtml(s.id)).join(', ')}${state.sessionId ? `, not to this desk (${escapeHtml(state.sessionId)})` : ', and this desk has no session yet'}. Start a session here, or restart the broadcast once this desk has one.</div>`
+      : '';
+    $('live').innerHTML = rows + warning;
+  } catch { /* the live panel is best-effort */ }
+}
+
+setInterval(refreshLive, 5000);
+
 async function startSession() {
+  if (!state.key) { $('setupErr').textContent = 'Add your API key above first — the desk cannot reach the server without one.'; return false; }
   const course = $('course').value.trim();
   if (!course) { $('setupErr').textContent = 'Name the course first — it keys the memory.'; return; }
   $('setupErr').textContent = '';
@@ -293,6 +420,7 @@ async function startSession() {
     logLine(`session ${out.session_id} — ${course}`);
     setStatus('live', course);
     refreshMe();
+    refreshLive();
     return true;
   } catch (e) {
     $('setupErr').textContent = e.message;
@@ -385,7 +513,7 @@ function stopAll() {
 async function refreshMe() {
   if (!state.course) return;
   try {
-    const me = await fetch('/api/me?course=' + encodeURIComponent(state.course)).then((r) => r.json());
+    const me = await fetch('/api/me?course=' + encodeURIComponent(state.course), { headers: authHeaders() }).then((r) => r.json());
     const stats = me.stats.filter((s) => s.graded > 0);
     $('stats').innerHTML = stats.length
       ? stats.map((s) => `<div class="stat"><span>${escapeHtml(s.screen_type)}</span><span>${Math.round(s.accuracy * 100)}% of ${s.graded}</span></div>`).join('')
@@ -444,21 +572,47 @@ $('btnStop').addEventListener('click', stopAll);
 $('btnReflect').addEventListener('click', reflectNow);
 $('btnStudy').addEventListener('click', studyPack);
 $('btnAsk').addEventListener('click', ask);
+$('btnSaveKey').addEventListener('click', saveKey);
+$('btnClearKey').addEventListener('click', forgetKey);
+$('apiKey').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') saveKey(); });
 $('interval').addEventListener('change', () => { if (state.timer) { clearInterval(state.timer); state.timer = setInterval(tick, Number($('interval').value)); } });
 
-(async function boot() {
+async function connect() {
+  if (!state.key) { setStatus('', 'add your API key'); return false; }
   try {
-    const h = await fetch('/api/health').then((r) => r.json());
+    const res = await fetch('/api/health', { headers: authHeaders() });
+    if (res.status === 401) {
+      setStatus('err', 'key refused');
+      $('setupErr').textContent = 'The server refused that key. Paste the key from your receipt — keys are sold on the landing page.';
+      return false;
+    }
+    const h = await res.json();
+    $('setupErr').textContent = '';
     setStatus(h.gateway?.key_configured ? 'live' : '', h.gateway?.key_configured ? `gateway ${h.gateway.model}` : 'gateway: no key');
     logLine(`ready — ${h.counters?.decisions || 0} decisions remembered`);
-    if (!('getDisplayMedia' in navigator.mediaDevices)) {
-      setStatus('err', 'this browser cannot capture the screen');
-      $('setupErr').textContent = 'Screen capture is unavailable here. On iPhone/iPad use the ReplayKit path; on Android use scrcpy or the MediaProjection app. See capture/README.md.';
-    }
+    return true;
   } catch (e) {
     setStatus('err', 'server unreachable');
     $('setupErr').textContent = 'Cannot reach the CourseMate server: ' + e.message;
+    return false;
   }
+}
+
+(async function boot() {
+  state.key = readKey();
+  paintKey();
+  if (!('getDisplayMedia' in navigator.mediaDevices)) {
+    setStatus('err', 'this browser cannot capture the screen');
+    $('setupErr').textContent = 'Screen capture is unavailable here. On iPhone/iPad use the ReplayKit path; on Android use scrcpy or the MediaProjection app. See capture/README.md.';
+  }
+  if (!state.key) {
+    setStatus('', 'add your API key');
+    logLine('no key in this browser — paste one above to begin');
+    $('apiKey').focus();
+    return;
+  }
+  await connect();
+  await refreshLive();
 })();
 </script>
 </body>

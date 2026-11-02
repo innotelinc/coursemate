@@ -122,6 +122,25 @@ export function openStore(dbPath) {
       return q('SELECT * FROM sessions ORDER BY started_at DESC LIMIT ?').all(limit);
     },
 
+    /**
+     * Forgets lectures older than `days`: the session plus its observations,
+     * transcripts and decisions. Notes, lessons and persona drift stay, because
+     * they belong to the course rather than to one sitting in it.
+     */
+    pruneSessions(days) {
+      const cutoff = new Date(Date.now() - Math.max(0, days) * 86_400_000).toISOString();
+      const ids = q('SELECT id FROM sessions WHERE started_at < ?').all(cutoff).map((r) => r.id);
+      if (!ids.length) return { sessions: 0, observations: 0, transcripts: 0, decisions: 0 };
+
+      const marks = ids.map(() => '?').join(',');
+      return {
+        observations: q(`DELETE FROM observations WHERE session_id IN (${marks})`).run(...ids).changes,
+        transcripts: q(`DELETE FROM transcripts WHERE session_id IN (${marks})`).run(...ids).changes,
+        decisions: q(`DELETE FROM decisions WHERE session_id IN (${marks})`).run(...ids).changes,
+        sessions: q(`DELETE FROM sessions WHERE id IN (${marks})`).run(...ids).changes,
+      };
+    },
+
     // ── push devices ───────────────────────────────────────────────────────
     addDevice({ token, platform, bundleId }) {
       const now = new Date().toISOString();

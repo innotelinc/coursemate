@@ -434,3 +434,56 @@ test('a key the gateway stops accepting is refused on the very next request', as
   app.store.close();
   await new Promise((r) => gate.close(r));
 });
+
+test('the desk can see which session is actually being captured', async () => {
+  const res = await fetch(`${base}/api/sessions`);
+  assert.equal(res.status, 200);
+  const body = await res.json();
+
+  const mine = body.sessions.find((s) => s.id === globalThis.__sessionId);
+  assert.ok(mine, 'the session that just ingested is listed');
+  assert.equal(mine.course, 'BIOL 201 Cell Biology');
+  assert.equal(mine.live, true, 'it saw a frame a moment ago');
+  assert.ok(mine.idle_seconds <= 5);
+  assert.equal(body.live_window_seconds, 60);
+});
+
+test('ingest into a session from a previous lecture is refused', async () => {
+  // A broadcast that outlived its lecture is the case that used to keep writing
+  // into a session nobody was watching. It answers exactly like an unknown id,
+  // because the phone relies on 404 meaning "stop sending".
+  const stale = app.store.createSession({ course: 'BIOL 201 Cell Biology', persona: null });
+  app.store.raw
+    .prepare('UPDATE sessions SET started_at = ? WHERE id = ?')
+    .run(new Date(Date.now() - 9 * 3_600_000).toISOString(), stale.id);
+
+  const res = await post(`${base}/api/ingest/frame`, {
+    session_id: stale.id,
+    image_b64: TINY_JPEG,
+    mime: 'image/jpeg',
+  });
+  assert.equal(res.status, 404);
+  assert.match((await res.json()).error, /expired/);
+});
+
+test('pruning forgets old lectures and keeps what belongs to the course', async () => {
+  const old = app.store.createSession({ course: 'BIOL 201 Cell Biology', persona: null });
+  app.store.addTranscript({
+    sessionId: old.id,
+    course: 'BIOL 201 Cell Biology',
+    ts: 1,
+    text: 'a lecture from last month',
+  });
+  app.store.raw
+    .prepare('UPDATE sessions SET started_at = ? WHERE id = ?')
+    .run(new Date(Date.now() - 40 * 86_400_000).toISOString(), old.id);
+
+  const lessons = app.store.totals().lessons;
+  const removed = app.store.pruneSessions(14);
+
+  assert.ok(removed.sessions >= 1);
+  assert.ok(removed.transcripts >= 1);
+  assert.equal(app.store.getSession(old.id), null, 'the old session is gone');
+  assert.equal(app.store.getSession(globalThis.__sessionId).id, globalThis.__sessionId, 'the current lecture survives');
+  assert.equal(app.store.totals().lessons, lessons, 'lessons are course-scoped, so they are kept');
+});

@@ -184,6 +184,20 @@ export function loadConfig(overrides = {}) {
     confidenceFloor: num(env.COURSEMATE_CONFIDENCE_FLOOR, 0.55),
     transcriptWindow: num(env.COURSEMATE_TRANSCRIPT_WINDOW, 40),
 
+    // A session is one lecture, not a permanent partition. Ingest into a session
+    // older than this is refused with the same 404 an unknown id gets, so a
+    // capture source that outlived its lecture stops instead of writing into a
+    // session nobody is watching. 0 disables the check.
+    sessionMaxAgeHours: num(env.COURSEMATE_SESSION_MAX_AGE_HOURS, 8),
+    // How long a session counts as live after its last frame or audio chunk. One
+    // number for the server, the desk and the docs — a source that has been
+    // silent for a minute has ended in practice.
+    sessionLiveSeconds: num(env.COURSEMATE_SESSION_LIVE_SECONDS, 60),
+    // How long a finished session's rows are kept. Notes, lessons and persona
+    // drift are course-scoped and are never pruned: the point is to forget
+    // lectures, not to forget the course.
+    sessionRetentionDays: num(env.COURSEMATE_SESSION_RETENTION_DAYS, 14),
+
     // APNs is off unless a provider key is actually available: there is no
     // point advertising a push path that cannot sign a token.
     push: pushConfig(env),
