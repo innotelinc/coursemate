@@ -20,7 +20,11 @@ on:
       confirm:
         description: Type true to actually revoke; anything else is a dry run
         required: false
-        default: "false"
+        default: ""
+      csr:
+        description: Base64 DER certificate signing request, to mint a distribution certificate
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -59,6 +63,19 @@ jobs:
             --key "$KEY_PATH" \
             --kid "$ASC_KEY_ID" \
             --issuer "$ASC_ISSUER_ID"
+
+      # The private key for this CSR never reaches the runner: only the request
+      # goes up and only the public certificate comes back.
+      - name: Mint a certificate from a CSR
+        if: ${{ github.event.inputs.csr != '' }}
+        run: |
+          set -uo pipefail
+          node tools/asc.mjs mint \
+            --key "$KEY_PATH" \
+            --kid "$ASC_KEY_ID" \
+            --issuer "$ASC_ISSUER_ID" \
+            --csr "${{ github.event.inputs.csr }}" \
+            --type DISTRIBUTION
 
       # Only runs when ids are given, so the default dispatch is a pure listing.
       - name: Revoke the named certificates

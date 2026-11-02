@@ -20,7 +20,8 @@ function usage() {
   node tools/asc.mjs probe  --key <p8> --kid <id> --issuer <uuid> [--bundle <bundleId>]
   node tools/asc.mjs builds --key <p8> --kid <id> --issuer <uuid> [--bundle <bundleId>] [--watch <build>] [--timeout <seconds>]
   node tools/asc.mjs certs  --key <p8> --kid <id> --issuer <uuid>
-  node tools/asc.mjs revoke --key <p8> --kid <id> --issuer <uuid> --id <certId>[,<certId>] [--confirm] [--allow-distribution]`);
+  node tools/asc.mjs revoke --key <p8> --kid <id> --issuer <uuid> --id <certId>[,<certId>] [--confirm] [--allow-distribution]
+  node tools/asc.mjs mint   --key <p8> --kid <id> --issuer <uuid> --csr <base64 der> [--type DISTRIBUTION]`);
 }
 
 function parseArgs(argv) {
@@ -326,6 +327,59 @@ async function revoke(args) {
   return failures > 0 ? 1 : 0;
 }
 
+/**
+ * Create one certificate from a CSR whose private key stays with the caller.
+ *
+ * This is the difference between an identity and a leak: the key never leaves the
+ * machine that generated it, and only the request and the public certificate
+ * cross the network. It is also what lets CI stop minting a certificate per
+ * runner — one certificate, one key, reused until it expires.
+ */
+async function mint(args) {
+  const jwt = sign(args);
+  const csr = args.csr && args.csr !== 'true' ? String(args.csr).trim() : '';
+  if (!csr) {
+    console.error('pass --csr <base64 DER of a certificate signing request>');
+    return 1;
+  }
+
+  const res = await fetch(`${API}/v1/certificates`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${jwt}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      data: {
+        type: 'certificates',
+        attributes: {
+          csrContent: csr,
+          certificateType: args.type && args.type !== 'true' ? args.type : 'DISTRIBUTION',
+        },
+      },
+    }),
+  });
+
+  const text = await res.text();
+  let body = null;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    body = null;
+  }
+
+  if (res.status >= 300) {
+    console.error(explain(res.status, body));
+    console.error(text.slice(0, 600));
+    return 1;
+  }
+
+  const cert = body?.data?.attributes ?? {};
+  console.log(`created ${cert.certificateType} id=${body?.data?.id}`);
+  console.log(`expires ${cert.expirationDate}`);
+  console.log('---CERT-BEGIN---');
+  console.log(cert.certificateContent ?? '');
+  console.log('---CERT-END---');
+  return 0;
+}
+
 async function main() {
   const [command, ...rest] = process.argv.slice(2);
   const args = parseArgs(rest);
@@ -352,6 +406,7 @@ async function main() {
   if (command === 'builds') return builds(credentials);
   if (command === 'certs') return certs(credentials);
   if (command === 'revoke') return revoke(credentials);
+  if (command === 'mint') return mint({ ...credentials, csr: args.csr, type: args.type });
   usage();
   return 1;
 }
