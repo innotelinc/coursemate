@@ -233,6 +233,28 @@ export function createApp(cfg, { fetchImpl } = {}) {
 
   // Push is fire-and-forget and lazily imported: an unconfigured APNs must cost
   // nothing, and a slow one must never delay the frame the extension is waiting on.
+  // How a session is described to a client: whether it is being filled right
+  // now, and how long ago it last was. One place, because the desk's panel and
+  // the app's "which session am I on" question must not disagree.
+  const describeSession = (s) => {
+    const lastSeen = Date.parse(s.last_seen_at || s.started_at) || 0;
+    const idle = Math.max(0, (Date.now() - lastSeen) / 1000);
+    return {
+      id: s.id,
+      course: s.course,
+      started_at: s.started_at,
+      last_seen_at: s.last_seen_at,
+      idle_seconds: Math.round(idle),
+      live: idle <= cfg.sessionLiveSeconds,
+    };
+  };
+
+  const sessionExpired = (s) => {
+    if (!(cfg.sessionMaxAgeHours > 0)) return false;
+    const started = Date.parse(s.started_at) || 0;
+    return Date.now() - started > cfg.sessionMaxAgeHours * 3_600_000;
+  };
+
   const pushOnce = (() => {
     let module = null;
     return async (options) => {
@@ -350,20 +372,22 @@ export function createApp(cfg, { fetchImpl } = {}) {
     // like "the extension is not posting".
     'GET /api/sessions': async ({ query }) => {
       const limit = Math.max(1, Math.min(50, Number(query.get('limit')) || 10));
-      const now = Date.now();
-      const sessions = store.recentSessions(limit).map((s) => {
-        const lastSeen = Date.parse(s.last_seen_at || s.started_at) || 0;
-        const idle = Math.max(0, (now - lastSeen) / 1000);
-        return {
-          id: s.id,
-          course: s.course,
-          started_at: s.started_at,
-          last_seen_at: s.last_seen_at,
-          idle_seconds: Math.round(idle),
-          live: idle <= cfg.sessionLiveSeconds,
-        };
-      });
+      const sessions = store.recentSessions(limit).map(describeSession);
       return { sessions, live_window_seconds: cfg.sessionLiveSeconds };
+    },
+
+    // The one session that is current, named rather than inferred. A session
+    // starts in two places — the app's console and this desk's Start button — and
+    // the most recent one owns the broadcast. This is how the session the app
+    // recorded becomes the one the web desk shows, instead of the desk capturing
+    // into a session of its own that no phone is posting to.
+    'GET /api/session/current': async () => {
+      const newest = store.recentSessions(1)[0] || null;
+      if (!newest) return { session: null, live_window_seconds: cfg.sessionLiveSeconds };
+      if (sessionExpired(newest)) {
+        return { session: null, expired: newest.id, live_window_seconds: cfg.sessionLiveSeconds };
+      }
+      return { session: describeSession(newest), live_window_seconds: cfg.sessionLiveSeconds };
     },
 
     'POST /api/session': async ({ body }) => {
@@ -372,7 +396,9 @@ export function createApp(cfg, { fetchImpl } = {}) {
       const persona = personaSource();
       const session = store.createSession({ course, persona });
       log('session', `start ${session.id}`, course);
-      return { session_id: session.id, course, persona };
+      // `started_at` travels with the id so a client that was showing the
+      // previous session can tell this one is newer and follow it.
+      return { session_id: session.id, course, persona, started_at: session.started_at ?? nowIso() };
     },
 
     'POST /api/ingest/frame': async ({ body }) => {

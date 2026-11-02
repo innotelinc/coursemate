@@ -487,3 +487,45 @@ test('pruning forgets old lectures and keeps what belongs to the course', async 
   assert.equal(app.store.getSession(globalThis.__sessionId).id, globalThis.__sessionId, 'the current lecture survives');
   assert.equal(app.store.totals().lessons, lessons, 'lessons are course-scoped, so they are kept');
 });
+
+test('the session the app records is the one the desk follows', async () => {
+  // The app opens the console and creates a session; the desk did not create
+  // this one and has never seen the id. Whatever the server calls current is
+  // what the desk adopts, which is the whole point of recording it here.
+  const created = await post(`${base}/api/session`, { course: 'CHEM 110 General Chemistry' });
+  assert.equal(created.status, 200);
+  const body = await created.json();
+  assert.ok(body.started_at, 'the server says when the session started, so a client can tell newer from older');
+
+  const current = await (await fetch(`${base}/api/session/current`)).json();
+  assert.equal(current.session.id, body.session_id);
+  assert.equal(current.session.course, 'CHEM 110 General Chemistry');
+
+  // The desk polls this list and takes the head of it; it must be the same
+  // session, not the desk's own older one.
+  const list = await (await fetch(`${base}/api/sessions`)).json();
+  assert.equal(list.sessions[0].id, body.session_id);
+
+  globalThis.__appSessionId = body.session_id;
+});
+
+test('a frame the app posts shows up on a desk that never started a session', async () => {
+  const ingested = await post(`${base}/api/ingest/frame`, {
+    session_id: globalThis.__appSessionId,
+    image_b64: TINY_JPEG,
+    mime: 'image/jpeg',
+    hash: 'ef01',
+  });
+  assert.equal(ingested.status, 200);
+
+  const desk = await (await fetch(`${base}/api/desk?session_id=${globalThis.__appSessionId}`)).json();
+  assert.equal(desk.decisions.length, 1, 'the desk reads history, so adopting a session is not a blank page');
+  assert.equal(desk.decisions[0].payload.chosen_text, 'B) Chloroplast');
+});
+
+test('the desk page follows the current session instead of keeping its own', async () => {
+  const html = await (await fetch(`${base}/desk`)).text();
+  assert.match(html, /\/api\/sessions/, 'the desk asks which session is being captured');
+  assert.match(html, /function adopt\(/, 'and takes over the newer one');
+  assert.match(html, /state\.sessionSince/, 'comparing start times is what stops it flapping between two ids');
+});

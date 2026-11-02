@@ -108,9 +108,13 @@ export function openStore(dbPath) {
     // ── sessions ──────────────────────────────────────────────────────────────
     createSession({ course, persona }) {
       const id = newId('ses');
+      // One timestamp for both columns: a session that has never been posted to
+      // must not look "seen" a moment after it started, and a client comparing
+      // sessions needs the start time this row actually carries.
+      const startedAt = nowIso();
       q('INSERT INTO sessions (id, course, persona, started_at, last_seen_at) VALUES (?,?,?,?,?)')
-        .run(id, course, JSON.stringify(persona ?? null), nowIso(), nowIso());
-      return { id, course };
+        .run(id, course, JSON.stringify(persona ?? null), startedAt, startedAt);
+      return { id, course, started_at: startedAt };
     },
     getSession(id) {
       return q('SELECT * FROM sessions WHERE id = ?').get(id) ?? null;

@@ -107,6 +107,7 @@
     <div class="card">
       <div class="row" style="justify-content:space-between">
         <h3 style="margin:0">Capture source</h3>
+        <span class="muted" id="mySession">no session yet</span>
         <span class="muted" id="liveCount">—</span>
       </div>
       <div id="live"><div class="empty">Nothing is posting yet.</div></div>
@@ -155,7 +156,7 @@
 <script>
 'use strict';
 const $ = (id) => document.getElementById(id);
-const state = { sessionId: null, course: '', display: null, audioStream: null, recorder: null, timer: null, lastHash: null, busy: false, micOn: false, micStream: null, decisions: 0, key: '' };
+const state = { sessionId: null, sessionSince: '', course: '', display: null, audioStream: null, recorder: null, timer: null, lastHash: null, busy: false, micOn: false, micStream: null, decisions: 0, key: '' };
 
 // A bought key is the only way in on the hosted server, so the desk owns the
 // entry point: it is stored per browser, never cached on the server, and sent as
@@ -186,6 +187,15 @@ function logLine(msg) {
 function setStatus(kind, text) {
   $('dot').className = 'dot' + (kind ? ' ' + kind : '');
   $('hdr').textContent = text;
+}
+
+// Which session this desk is on, in words, next to the capture source. The id
+// changing is the thing that used to be invisible: the desk kept the previous
+// one while frames went somewhere else.
+function paintSession() {
+  $('mySession').textContent = state.sessionId
+    ? 'this desk: ' + state.sessionId
+    : 'no session yet';
 }
 async function post(path, body) {
   const res = await fetch(path, {
@@ -374,16 +384,59 @@ function renderDecision(dec, obs) {
 
 const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-// Which session is actually being filled? A broadcast can outlive the session it
-// was started for, and a desk showing one session while another receives the
-// frames is the failure that reads as "the extension is not posting". The server
-// knows, because every frame and audio chunk touches its session.
-async function refreshLive() {
+// One session is current at a time, and it is whichever was created most
+// recently: the phone's console or this desk's Start button. The desk asks the
+// server rather than assuming its own session is the one being filled — a
+// broadcast started in the app wrote a session this page has never seen, and a
+// desk showing one session while another receives the frames is the failure that
+// reads as "the extension is not posting".
+async function loadDesk(sessionId) {
+  const desk = $('desk');
+  try {
+    const res = await fetch('/api/desk?session_id=' + encodeURIComponent(sessionId), { headers: authHeaders() });
+    if (!res.ok) return;
+    const { decisions } = await res.json();
+    state.decisions = 0;
+    desk.innerHTML = decisions.length ? '' : '<div class="empty">Watching. Decisions appear here.</div>';
+    // Oldest first: every card is prepended, so this leaves the newest on top.
+    decisions.slice().reverse().forEach((d) => renderDecision(d));
+    $('deskCount').textContent = `${decisions.length} decision${decisions.length === 1 ? '' : 's'}`;
+  } catch { /* history is best-effort */ }
+}
+
+// Takes over the session the server says is current. Anything buffered belongs
+// to the session it came from, so the frame hash is dropped and the desk is
+// re-read rather than kept from the session this page was on.
+function adopt(session, why) {
+  if (!session || session.id === state.sessionId) return false;
+  state.sessionId = session.id;
+  state.sessionSince = session.started_at || '';
+  if (session.course) state.course = session.course;
+  state.lastHash = null;
+  state.decisions = 0;
+  paintSession();
+  logLine(`${why} — ${session.id}${session.course ? ' (' + session.course + ')' : ''}`);
+  setStatus('live', session.course || 'session');
+  loadDesk(session.id);
+  return true;
+}
+
+async function syncSessions() {
   if (!state.key) return;
   try {
     const res = await fetch('/api/sessions', { headers: authHeaders() });
     if (!res.ok) return;
     const { sessions, live_window_seconds: liveWindow } = await res.json();
+    const current = sessions[0];
+
+    // A session newer than this desk's own means somebody else started the
+    // lecture — almost always the app's console, which is where a broadcast gets
+    // its session id. Follow it instead of capturing into a session nobody is
+    // watching. Equal or older ids never move the desk, so a poll cannot flap.
+    if (current && (!state.sessionId || (current.started_at || '') > (state.sessionSince || ''))) {
+      if (adopt(current, 'following the current session')) refreshMe();
+    }
+
     const live = sessions.filter((s) => s.live);
     $('liveCount').textContent = live.length ? `${live.length} live` : 'idle';
     if (!live.length) {
@@ -398,13 +451,13 @@ async function refreshLive() {
     }).join('');
     const foreign = live.filter((s) => s.id !== state.sessionId);
     const warning = foreign.length
-      ? `<div class="err-box">Posting to ${foreign.map((s) => escapeHtml(s.id)).join(', ')}${state.sessionId ? `, not to this desk (${escapeHtml(state.sessionId)})` : ', and this desk has no session yet'}. Start a session here, or restart the broadcast once this desk has one.</div>`
+      ? `<div class="err-box">Posting to ${foreign.map((s) => escapeHtml(s.id)).join(', ')}${state.sessionId ? `, not to this desk (${escapeHtml(state.sessionId)})` : ', and this desk has no session yet'}.</div>`
       : '';
     $('live').innerHTML = rows + warning;
   } catch { /* the live panel is best-effort */ }
 }
 
-setInterval(refreshLive, 5000);
+setInterval(syncSessions, 5000);
 
 async function startSession() {
   if (!state.key) { $('setupErr').textContent = 'Add your API key above first — the desk cannot reach the server without one.'; return false; }
@@ -412,15 +465,22 @@ async function startSession() {
   if (!course) { $('setupErr').textContent = 'Name the course first — it keys the memory.'; return; }
   $('setupErr').textContent = '';
   try {
+    // Always a new session. Keeping the id this page already had is what made
+    // Start look like it did nothing: the click created a session the desk was
+    // not on, so the panel kept showing the previous lecture.
     const out = await post('/api/session', { course });
     state.sessionId = out.session_id;
+    state.sessionSince = out.started_at || new Date().toISOString();
     state.course = course;
     state.decisions = 0;
+    state.lastHash = null;
+    paintSession();
     $('desk').innerHTML = '<div class="empty">Watching. Decisions appear here.</div>';
+    $('deskCount').textContent = '0 decisions';
     logLine(`session ${out.session_id} — ${course}`);
     setStatus('live', course);
     refreshMe();
-    refreshLive();
+    syncSessions();
     return true;
   } catch (e) {
     $('setupErr').textContent = e.message;
@@ -601,6 +661,7 @@ async function connect() {
 (async function boot() {
   state.key = readKey();
   paintKey();
+  paintSession();
   if (!('getDisplayMedia' in navigator.mediaDevices)) {
     setStatus('err', 'this browser cannot capture the screen');
     $('setupErr').textContent = 'Screen capture is unavailable here. On iPhone/iPad use the ReplayKit path; on Android use scrcpy or the MediaProjection app. See capture/README.md.';
@@ -612,7 +673,9 @@ async function connect() {
     return;
   }
   await connect();
-  await refreshLive();
+  // Opening the desk on a lecture that is already running shows that lecture,
+  // not an empty page waiting for a Start that would orphan it.
+  await syncSessions();
 })();
 </script>
 </body>
