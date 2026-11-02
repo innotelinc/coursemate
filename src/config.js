@@ -129,6 +129,17 @@ export function loadConfig(overrides = {}) {
     port: num(env.COURSEMATE_PORT, 8790),
     token: env.COURSEMATE_TOKEN || '',
 
+    // The one name the product is published under. It is written in three
+    // places that must not disagree — the redirect from the old host, the links
+    // the site renders, and the share card — so it is read once here.
+    publicUrl: (env.COURSEMATE_PUBLIC_URL || 'https://cm.innotel.us').replace(/\/$/, ''),
+    // Hosts that used to serve this app. They answer with a 301 to `publicUrl`,
+    // so a phone that still has the old endpoint keeps working through the move.
+    legacyHosts: (env.COURSEMATE_LEGACY_HOSTS || 'cm.innotel.tech')
+      .split(',')
+      .map((h) => h.trim().toLowerCase())
+      .filter(Boolean),
+
     // Purchased keys. CourseMate is sold the way Sage is: one gateway key per
     // session, minted on the OmniRoute gateway and deleted when the window ends.
     // With this on, a bearer that the gateway accepts is as good as the shared
@@ -153,6 +164,11 @@ export function loadConfig(overrides = {}) {
     visionModel: env.COURSEMATE_VISION_MODEL || 'auto',
     sttModel: env.COURSEMATE_STT_MODEL || 'whisper-1',
     timeoutMs: num(env.COURSEMATE_TIMEOUT_MS, 90_000),
+
+    // Where keys are sold. Magnate mints the key and the gateway enforces it;
+    // the site only sends the buyer there, so the shop is one link and never a
+    // second price list to keep in step.
+    shopUrl: (env.COURSEMATE_SHOP_URL || 'https://magnate.innotel.us/coursemate').replace(/\/$/, ''),
 
     mode: env.COURSEMATE_MODE === 'auto' ? 'auto' : 'assist',
     actionWebhook: env.COURSEMATE_ACTION_WEBHOOK || '',

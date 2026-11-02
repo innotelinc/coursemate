@@ -38,7 +38,7 @@ jobs:
       # Where the app looks for the server, and the bearer it presents. The URL
       # is public; the token is a repository secret and only ever reaches the
       # bundle that is about to be signed.
-      CM_SERVER: https://cm.innotel.tech
+      CM_SERVER: https://cm.innotel.us
       CM_TOKEN: ${{ secrets.COURSEMATE_TOKEN }}
 
     steps:
@@ -60,6 +60,14 @@ jobs:
           [ -n "${ASC_KEY_ID:-}" ]    || missing+=("APP_STORE_CONNECT_KEY_ID (10 chars)")
           [ -n "${ASC_ISSUER_ID:-}" ] || missing+=("APP_STORE_CONNECT_ISSUER_ID (UUID)")
           [ -n "${TEAM_ID:-}" ]       || missing+=("APPLE_TEAM_ID (10 chars)")
+          # Required, not optional. Automatic signing on an ephemeral runner
+          # mints a certificate whenever no identity is present — the private key
+          # dies with the runner, so every run adds one until Apple refuses and
+          # the release fails with "maximum number of certificates". A fork, or
+          # this repository with a cleared secret, must say that plainly instead
+          # of quietly spending the account's certificate budget.
+          [ -n "${SIGNING_P12:-}" ]   || missing+=("SIGNING_P12 (base64 of the distribution identity's .p12)")
+          [ -n "${SIGNING_P12_PASSWORD:-}" ] || missing+=("SIGNING_P12_PASSWORD")
           if [ ${#missing[@]} -gt 0 ]; then
             echo "::error::Release credentials are incomplete; nothing was built or uploaded."
             for m in "${missing[@]}"; do echo "::error::missing secret: $m"; done
@@ -189,7 +197,6 @@ jobs:
       # finds a usable certificate and signs with it, instead of asking Apple to
       # create another one.
       - name: Install the signing identity
-        if: ${{ env.SIGNING_P12 != '' }}
         run: |
           set -euo pipefail
           KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"

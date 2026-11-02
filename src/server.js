@@ -248,6 +248,20 @@ export function createApp(cfg, { fetchImpl } = {}) {
   };
 
   const routes = {
+    // What the site's "check this key" box asks. Reaching this handler already
+    // means `authorised` accepted the bearer; `checked` says whether that was a
+    // real verdict from the gateway or a development server saying yes to
+    // everything, which the site shows differently rather than claiming a key
+    // is good when nothing looked at it.
+    'GET /api/key': async () => ({
+      ok: true,
+      checked: Boolean(cfg.gatewayKeys || cfg.token),
+      gateway: cfg.gatewayUrl,
+      shop: cfg.shopUrl,
+      server: cfg.publicUrl,
+      checked_at: nowIso(),
+    }),
+
     'GET /api/health': async () => ({
       ok: true,
       now: nowIso(),
@@ -375,6 +389,24 @@ export function createApp(cfg, { fetchImpl } = {}) {
   const server = createHttpServer(async (req, res) => {
     const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
     const key = `${req.method} ${url.pathname}`;
+
+    // One canonical host. The name this app used to answer on redirects to it,
+    // so an install that still carries the old endpoint reaches the same desk
+    // instead of failing on a certificate that no longer exists. GET and HEAD
+    // only: a 301 on a POST is replayed as a GET by every client, which would
+    // drop the body and report success for a request that never happened.
+    const host = (req.headers.host || '').split(':')[0].toLowerCase();
+    if (
+      cfg.publicUrl &&
+      cfg.legacyHosts.includes(host) &&
+      (req.method === 'GET' || req.method === 'HEAD')
+    ) {
+      res.writeHead(301, {
+        Location: cfg.publicUrl + url.pathname + url.search,
+        'Cache-Control': 'public, max-age=3600',
+      });
+      return res.end();
+    }
 
     if (!url.pathname.startsWith('/api/')) return serveStatic(req, res, url.pathname);
 

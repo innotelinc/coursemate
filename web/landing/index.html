@@ -3,164 +3,442 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>CourseMate — watch it, listen to it, answer it</title>
-  <meta name="description" content="A course-taking agent for any course, on any screen: it watches the screen, listens to the lecture, remembers the course, and hands you a validated answer, a note or a drafted essay in your own voice.">
-  <meta property="og:title" content="CourseMate — watch it, listen to it, answer it">
-  <meta property="og:description" content="A course-taking agent for any course, on any screen: it watches the screen, listens to the lecture, remembers the course, and hands you a validated answer, a note or a drafted essay in your own voice.">
+  <title>CourseMate — watch it, hear it, answer it</title>
+  <meta name="description" content="A course-taking agent for any course on any screen. It reads the question, remembers the lecture, and hands you a validated answer, a note or a drafted essay in your own voice — for you to submit, never instead of you.">
+  <meta property="og:title" content="CourseMate — watch it, hear it, answer it">
+  <meta property="og:description" content="A course-taking agent for any course on any screen: it watches, listens, remembers and drafts. You stay the one who submits.">
   <meta property="og:type" content="website">
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b0d10'/%3E%3Ctext x='32' y='44' font-size='34' text-anchor='middle'%3E•%3C/text%3E%3C/svg%3E">
-  <link rel="stylesheet" href="unity-theme.css">
+  <meta property="og:url" content="https://cm.innotel.us/">
+  <link rel="canonical" href="https://cm.innotel.us/">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b0d10'/%3E%3Ccircle cx='32' cy='32' r='9' fill='%237dd3fc'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/unity-theme.css">
   <script>window.UNITY_DEFAULT_SCHEME = "operations";</script>
-  <script src="unity-theme.js"></script>
-  <style>:root {
-      --p-bg: var(--canvas);
-      --p-bg-elevated: var(--surface-muted);
-      --p-surface: var(--surface);
-      --p-surface-hover: var(--surface-sunken);
-      --p-border: var(--line);
-      --p-text: var(--ink);
-      --p-text-secondary: var(--ink-soft);
-      --p-text-muted: var(--ink-faint);
-      --p-accent: var(--brand);
-      --p-accent-hover: var(--brand-ring);
-      --p-accent-tint: var(--brand-soft);
-      --p-gold: var(--attention);
-      --p-success: var(--ok);
-      --radius-md: var(--radius);
+  <script src="/unity-theme.js"></script>
+  <style>
+    :root {
+      --bg: var(--canvas, #0a0b0e);
+      --card: var(--surface, #12141a);
+      --card-2: var(--surface-muted, #171a21);
+      --line: var(--line, #242833);
+      --ink: var(--ink, #f2f4f8);
+      --ink-2: var(--ink-soft, #a9b1c1);
+      --ink-3: var(--ink-faint, #6f7a8c);
+      --brand: var(--brand, #7dd3fc);
+      --brand-2: var(--brand-ring, #38bdf8);
+      --brand-soft: var(--brand-soft, rgba(125, 211, 252, .12));
+      --ok: var(--ok, #34d399);
+      --bad: #f87171;
+      --gold: var(--attention, #fbbf24);
+      --radius: var(--radius, 16px);
+      --radius-sm: var(--radius-sm, 10px);
       --ease: cubic-bezier(.2, .8, .2, 1);
     }
-
-    
     * { box-sizing: border-box; }
     html { scroll-behavior: smooth; }
     body {
-      margin: 0; background: var(--p-bg); color: var(--p-text);
-      font-family: ui-sans-serif, system-ui, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
-      font-size: 16px; line-height: 1.6; -webkit-font-smoothing: antialiased;
+      margin: 0; background: var(--bg); color: var(--ink);
+      font: 16px/1.6 ui-sans-serif, system-ui, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+      -webkit-font-smoothing: antialiased;
     }
-    ::selection { background: var(--p-accent-tint); }
-    a { color: var(--p-accent); text-decoration: none; }
-    a:hover { color: var(--p-accent-hover); }
-    code, pre { font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-    .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+    ::selection { background: var(--brand-soft); }
+    a { color: var(--brand); text-decoration: none; }
+    a:hover { color: var(--brand-2); }
+    code, .mono { font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .wrap { width: 100%; max-width: 1080px; margin: 0 auto; padding: 0 22px; }
+    .grad { background: linear-gradient(120deg, var(--brand) 0%, #c4b5fd 55%, var(--gold) 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
 
-    .topbar { position: sticky; top: 0; z-index: 10; background: color-mix(in srgb, var(--canvas) 72%, transparent); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); border-bottom: 1px solid var(--p-border); }
-    .topbar-inner { display: flex; align-items: center; gap: 20px; height: 60px; }
-    .brand { display: flex; align-items: center; gap: 10px; font-weight: 650; letter-spacing: 0.04em; color: var(--p-text); }
-    .brand:hover { color: var(--p-text); }
-    .brand .mark { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 8px; background: var(--p-bg-elevated); border: 1px solid var(--p-border); font-size: 15px; }
-    .brand .dot { color: var(--p-accent); }
-    .topbar nav { margin-left: auto; display: flex; align-items: center; gap: 4px; }
-    .topbar nav a { color: var(--p-text-secondary); padding: 6px 12px; border-radius: var(--radius-sm); font-size: 14px; transition: color .15s var(--ease), background .15s var(--ease); }
-    .topbar nav a:hover { color: var(--p-text); background: var(--p-surface-hover); }
-    .topbar .gh { display: inline-flex; align-items: center; gap: 8px; margin-left: 8px; border: 1px solid var(--p-border); border-radius: var(--radius-md); padding: 7px 14px; color: var(--p-text); font-size: 14px; transition: border-color .15s var(--ease), background .15s var(--ease); }
-    .topbar .gh:hover { border-color: var(--p-accent); background: var(--p-accent-tint); color: var(--p-text); }
+    /* ── nav ─────────────────────────────────────────────────────────── */
+    .nav { position: sticky; top: 0; z-index: 20; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--bg) 78%, transparent); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }
+    .nav-in { display: flex; align-items: center; gap: 18px; height: 62px; }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 650; letter-spacing: .01em; color: var(--ink); }
+    .brand:hover { color: var(--ink); }
+    .brand .mark { width: 26px; height: 26px; border-radius: 9px; display: grid; place-items: center; background: var(--brand-soft); border: 1px solid color-mix(in srgb, var(--brand) 35%, transparent); }
+    .brand .mark::after { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--brand); box-shadow: 0 0 12px var(--brand); }
+    .links { margin-left: auto; display: flex; align-items: center; gap: 2px; }
+    .links a { color: var(--ink-2); font-size: 14px; padding: 7px 11px; border-radius: 999px; transition: color .15s var(--ease), background .15s var(--ease); }
+    .links a:hover { color: var(--ink); background: var(--card-2); }
+    .links .cta { color: var(--ink); border: 1px solid var(--line); margin-left: 8px; }
+    .links .cta:hover { border-color: var(--brand); background: var(--brand-soft); }
+    @media (max-width: 720px) { .links a:not(.cta):not(.hide-sm) { display: none; } }
 
-    .hero { position: relative; overflow: hidden; padding: 96px 0 72px; }
-    .hero::before { content: ""; position: absolute; inset: 0; background: radial-gradient(600px 320px at 70% -10%, color-mix(in srgb, var(--brand) 14%, transparent), transparent 70%), radial-gradient(500px 300px at 15% 110%, color-mix(in srgb, var(--attention) 6%, transparent), transparent 70%); pointer-events: none; }
-    .hero-inner { position: relative; max-width: 760px; }
-    .kicker { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--p-accent-hover); background: var(--p-accent-tint); border: 1px solid color-mix(in srgb, var(--brand) 30%, transparent); border-radius: 999px; padding: 5px 14px; margin: 0 0 24px; }
-    .kicker .pulse { width: 7px; height: 7px; border-radius: 50%; background: var(--p-success); box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 50%, transparent); animation: pulse 2.4s var(--ease) infinite; }
-    @keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 45%, transparent); } 70% { box-shadow: 0 0 0 9px color-mix(in srgb, var(--ok) 0%, transparent); } 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 0%, transparent); } }
-    h1 { font-size: clamp(2.2rem, 5.5vw, 3.4rem); line-height: 1.08; letter-spacing: -0.02em; margin: 0 0 20px; font-weight: 700; }
-    h1 .accent { color: var(--p-accent); }
-    .lede { font-size: 1.125rem; color: var(--p-text-secondary); max-width: 660px; margin: 0 0 32px; }
-    .cta-row { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 28px; }
-    .btn { display: inline-flex; align-items: center; gap: 8px; border-radius: var(--radius-md); padding: 11px 20px; font-size: 15px; font-weight: 550; border: 1px solid transparent; cursor: pointer; transition: background .15s var(--ease), border-color .15s var(--ease); }
-    .btn-primary { background: var(--p-accent); color: var(--brand-ink); font-weight: 600; }
-    .btn-primary:hover { background: var(--p-accent-hover); color: var(--brand-ink); }
-    .btn-secondary { border-color: var(--p-border); color: var(--p-text); background: transparent; }
-    .btn-secondary:hover { border-color: var(--p-accent); background: var(--p-accent-tint); color: var(--p-text); }
-    .quickstart { display: flex; align-items: center; gap: 14px; background: var(--p-bg-elevated); border: 1px solid var(--p-border); border-radius: var(--radius-md); padding: 12px 16px; max-width: 680px; font-size: 13.5px; }
-    .quickstart code { color: var(--p-text); white-space: nowrap; overflow-x: auto; }
-    .quickstart code .c { color: var(--p-text-muted); }
-    .quickstart .copy { margin-left: auto; flex: 0 0 auto; background: transparent; border: 1px solid var(--p-border); color: var(--p-text-secondary); border-radius: var(--radius-sm); font: inherit; font-size: 12px; padding: 4px 10px; cursor: pointer; transition: border-color .15s var(--ease), color .15s var(--ease); }
-    .quickstart .copy:hover { border-color: var(--p-accent); color: var(--p-text); }
-    .quickstart .copy.copied { color: var(--p-success); border-color: var(--p-success); }
+    /* ── hero ────────────────────────────────────────────────────────── */
+    .hero { position: relative; overflow: hidden; padding: 90px 0 64px; }
+    .hero::before {
+      content: ""; position: absolute; inset: -20% -10% auto -10%; height: 520px; pointer-events: none;
+      background:
+        radial-gradient(520px 300px at 22% 0%, color-mix(in srgb, var(--brand) 22%, transparent), transparent 72%),
+        radial-gradient(460px 280px at 84% 12%, color-mix(in srgb, #a78bfa 18%, transparent), transparent 72%);
+      filter: blur(6px);
+    }
+    .hero-in { position: relative; display: grid; grid-template-columns: 1.15fr .85fr; gap: 44px; align-items: center; }
+    @media (max-width: 900px) { .hero-in { grid-template-columns: 1fr; gap: 32px; } .hero { padding-top: 64px; } }
+    .pill { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; letter-spacing: .10em; text-transform: uppercase; color: var(--brand); background: var(--brand-soft); border: 1px solid color-mix(in srgb, var(--brand) 28%, transparent); border-radius: 999px; padding: 5px 13px; }
+    .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 55%, transparent); animation: pulse 2.6s var(--ease) infinite; }
+    @keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 50%, transparent); } 70% { box-shadow: 0 0 0 10px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+    h1 { font-size: clamp(2.1rem, 5vw, 3.3rem); line-height: 1.06; letter-spacing: -.03em; font-weight: 720; margin: 18px 0 18px; }
+    .lede { font-size: 1.06rem; color: var(--ink-2); max-width: 34em; margin: 0 0 26px; }
+    .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+    .btn { display: inline-flex; align-items: center; gap: 8px; border-radius: var(--radius-sm); padding: 11px 18px; font-size: 14.5px; font-weight: 600; border: 1px solid transparent; cursor: pointer; font-family: inherit; transition: transform .15s var(--ease), background .15s var(--ease), border-color .15s var(--ease); }
+    .btn:active { transform: translateY(1px); }
+    .btn-1 { background: var(--brand); color: #06222e; }
+    .btn-1:hover { background: var(--brand-2); color: #06222e; }
+    .btn-2 { background: transparent; color: var(--ink); border-color: var(--line); }
+    .btn-2:hover { border-color: var(--brand); background: var(--brand-soft); color: var(--ink); }
+    .btn[disabled] { opacity: .55; cursor: default; }
+    .fine { color: var(--ink-3); font-size: 12.5px; margin-top: 18px; }
 
-    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 56px 0 0; }
-    .stat { background: var(--p-bg-elevated); border: 1px solid var(--p-border); border-radius: var(--radius-md); padding: 16px; }
-    .stat .n { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.02em; }
-    .stat .n em { font-style: normal; color: var(--p-accent); }
-    .stat .l { font-size: 13px; color: var(--p-text-muted); margin-top: 2px; }
+    /* key card */
+    .key { background: linear-gradient(180deg, var(--card-2), var(--card)); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; box-shadow: 0 24px 60px -30px rgba(0,0,0,.9); }
+    .key h2 { margin: 0 0 4px; font-size: 1rem; letter-spacing: -.01em; }
+    .key p { margin: 0 0 14px; color: var(--ink-3); font-size: 13px; }
+    .field { display: flex; gap: 8px; }
+    input[type=text], input[type=email], input[type=number] {
+      width: 100%; background: var(--bg); color: var(--ink); border: 1px solid var(--line);
+      border-radius: var(--radius-sm); padding: 10px 12px; font: inherit; font-size: 14px; min-width: 0;
+    }
+    input:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-soft); }
+    .field .btn { flex: 0 0 auto; }
+    .verdict { margin-top: 12px; font-size: 13px; min-height: 18px; }
+    .verdict.ok { color: var(--ok); }
+    .verdict.bad { color: var(--bad); }
+    .verdict.wait { color: var(--ink-3); }
+    .key .sep { height: 1px; background: var(--line); margin: 16px 0; }
+    .key .buy-line { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13.5px; color: var(--ink-2); }
 
-    section { padding: 64px 0; }
-    .sec-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 28px; }
-    .sec-head h2 { font-size: 1.6rem; letter-spacing: -0.02em; margin: 0; }
-    .sec-head p { color: var(--p-text-muted); margin: 0; font-size: 14.5px; }
+    /* ── sections ────────────────────────────────────────────────────── */
+    section { padding: 56px 0; }
+    .head { margin-bottom: 26px; }
+    .head h2 { font-size: clamp(1.35rem, 2.4vw, 1.7rem); letter-spacing: -.02em; margin: 0 0 6px; }
+    .head p { margin: 0; color: var(--ink-3); font-size: 14.5px; }
+    .grid { display: grid; gap: 14px; }
+    .g4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .g2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    @media (max-width: 900px) { .g4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    @media (max-width: 620px) { .g4, .g2 { grid-template-columns: 1fr; } }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; transition: border-color .2s var(--ease), transform .2s var(--ease); }
+    .card:hover { border-color: color-mix(in srgb, var(--brand) 40%, var(--line)); transform: translateY(-2px); }
+    .card h3 { margin: 0 0 6px; font-size: 1rem; letter-spacing: -.01em; }
+    .card p { margin: 0; color: var(--ink-2); font-size: 13.8px; }
+    .card .n { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 7px; background: var(--brand-soft); color: var(--brand); font-size: 12px; font-weight: 700; margin-bottom: 10px; }
+
+    .facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 26px; }
+    @media (max-width: 620px) { .facts { grid-template-columns: 1fr; } }
+    .fact { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 14px 16px; background: var(--card-2); }
+    .fact b { display: block; font-size: 1.15rem; letter-spacing: -.02em; }
+    .fact span { color: var(--ink-3); font-size: 12.5px; }
+
+    /* price */
+    .price { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+    @media (max-width: 780px) { .price { grid-template-columns: 1fr; } }
+    .price .card { padding: 24px; }
+    .price .amount { font-size: 2rem; font-weight: 700; letter-spacing: -.03em; }
+    .price .amount small { font-size: .8rem; font-weight: 500; color: var(--ink-3); letter-spacing: 0; }
+    .price ul { margin: 14px 0 0; padding: 0; list-style: none; }
+    .price li { color: var(--ink-2); font-size: 13.8px; padding: 5px 0 5px 20px; position: relative; }
+    .price li::before { content: "→"; position: absolute; left: 0; color: var(--brand); }
+    .buy label { display: block; font-size: 12.5px; color: var(--ink-3); margin: 12px 0 5px; }
+    .buy .two { display: grid; grid-template-columns: 2fr 1fr; gap: 8px; }
+    .buy .btn { width: 100%; margin-top: 14px; justify-content: center; }
+    .note { font-size: 12.5px; color: var(--ink-3); margin-top: 10px; }
+
+    .quote { border-left: 2px solid var(--brand); padding: 4px 0 4px 18px; margin: 0; color: var(--ink-2); font-size: 15px; }
+
+    /* ── foot ────────────────────────────────────────────────────────── */
+    footer { border-top: 1px solid var(--line); padding: 34px 0 46px; margin-top: 40px; }
+    .foot { display: flex; flex-wrap: wrap; gap: 20px; justify-content: space-between; }
+    .foot nav { display: flex; flex-wrap: wrap; gap: 16px; }
+    .foot a, .foot span { font-size: 13px; color: var(--ink-3); }
+    .foot a:hover { color: var(--brand); }
+    .stack { margin-top: 16px; font-size: 12.5px; color: var(--ink-3); }
+    .stack a { color: var(--ink-2); }
   </style>
 </head>
 <body>
-  <header class="topbar">
-    <div class="wrap">
-      <div class="topbar-inner">
-        <a class="brand" href="/"><span class="mark">•</span><span>coursemate</span></a>
-        <nav>
-          <a href="https://github.com/innotelinc/coursemate">Source</a>
-          <a class="gh" href="https://github.com/innotelinc/coursemate">GitHub ↗</a>
-        </nav>
-        <div class="ot-theme" role="group" aria-label="Colour theme" data-unity-switch><button type="button" data-theme-mode="system" aria-pressed="false">System</button><button type="button" data-theme-mode="light" aria-pressed="false">Light</button><button type="button" data-theme-mode="dark" aria-pressed="false">Dark</button></div>
-      </div>
+  <header class="nav">
+    <div class="wrap nav-in">
+      <a class="brand" href="/"><span class="mark"></span><span>coursemate</span></a>
+      <nav class="links">
+        <a href="#how">How it works</a>
+        <a href="#price">Price</a>
+        <a href="/desk">Desk</a>
+        <a class="cta" href="https://github.com/innotelinc/coursemate">GitHub ↗</a>
+      </nav>
     </div>
   </header>
 
-  <div class="wrap">
-    <section class="hero">
-      <div class="hero-inner">
-        <div class="kicker"><span class="pulse"></span> Learning · self-hosted · any screen</div>
-        <h1>CourseMate — <span class="accent">watch it, listen to it, answer it.</span></h1>
-        <p class="lede">Point it at whatever course you are already taking, on whatever screen you are taking it on. It reads the question, remembers the lecture, and puts a validated answer in front of you — as a card you submit, never as a click it makes for you.</p>
-        <div class="cta-row">
-          <a class="btn btn-primary" href="https://magnate.innotel.us/coursemate">Buy an API key</a>
-          <a class="btn btn-secondary" href="https://github.com/innotelinc/coursemate">View on GitHub</a>
-          <a class="btn btn-secondary" href="https://github.com/innotelinc/coursemate#quick-start">Quick start</a>
+  <main>
+    <div class="wrap hero">
+      <div class="hero-in">
+        <div>
+          <span class="pill"><span class="dot"></span> LearningOps · Innotel</span>
+          <h1>Watch it.<br>Hear it.<br><span class="grad">Answer it.</span></h1>
+          <p class="lede">CourseMate sits beside whatever course you are already taking — a web LMS, a desktop app, a video, a PDF — reads the question off the screen, remembers what the lecture said, and puts a checked answer in front of you.</p>
+          <div class="row">
+            <a class="btn btn-1" href="#price">Get a key</a>
+            <a class="btn btn-2" href="/desk">Open the desk</a>
+          </div>
+          <p class="fine">You submit. It never clicks for you.</p>
+        </div>
+
+        <div class="key">
+          <h2>Already have a key?</h2>
+          <p>Paste it here to check it before you type it into the app.</p>
+          <form class="field" id="key-form" autocomplete="off">
+            <input id="key-input" type="text" name="key" placeholder="sk-…" aria-label="API key" spellcheck="false">
+            <button class="btn btn-1" id="key-check" type="submit">Check</button>
+          </form>
+          <div class="verdict" id="key-verdict" role="status" aria-live="polite"></div>
+          <div class="sep"></div>
+          <div class="buy-line">
+            <span id="key-shop-label">No key yet?</span>
+            <a id="key-shop" href="https://magnate.innotel.us/coursemate">Buy one →</a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="wrap">
+      <div class="facts">
+        <div class="fact"><b>Any screen</b><span>pixels and audio, so the course platform does not matter</span></div>
+        <div class="fact"><b>Your voice</b><span>a persona file you own, lessons from your corrections</span></div>
+        <div class="fact"><b>One file</b><span>SQLite on your own disk, no account, no cloud copy</span></div>
+      </div>
+    </div>
+
+    <section id="how">
+      <div class="wrap">
+        <div class="head">
+          <h2>Four things, in order</h2>
+          <p>Every frame goes through the same pipeline, whether it is a quiz, a slide or an essay prompt.</p>
+        </div>
+        <div class="grid g4">
+          <div class="card"><span class="n">1</span><h3>Watch</h3><p>Changed frames are classified into a screen kind — quiz, test, essay, reading — with the exact stem and options.</p></div>
+          <div class="card"><span class="n">2</span><h3>Listen</h3><p>Lecture audio is chunked and transcribed, so what was said becomes evidence a draft can cite.</p></div>
+          <div class="card"><span class="n">3</span><h3>Remember</h3><p>Slides, transcripts and readings settle into per-course facts and key terms you can inspect.</p></div>
+          <div class="card"><span class="n">4</span><h3>Answer</h3><p>A validated card with its confidence, or a draft essay in your voice — plus a note when it is not sure.</p></div>
         </div>
       </div>
     </section>
 
-    <section style="padding:8px 0 28px;">
-      <div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px;">
-      <div style="padding:20px; border:1px solid var(--p-border); border-radius:var(--radius-md); background:var(--p-surface);"><h3 style="margin:0 0 6px; font-size:1.02rem;">A quiz answer has to be right the first time</h3><p style="margin:0; color:var(--p-text-secondary); font-size:14px;">A vision model returns typed JSON — screen kind, exact stem, options — and the answer is checked against a rubric before it becomes a card.</p></div>
-      <div style="padding:20px; border:1px solid var(--p-border); border-radius:var(--radius-md); background:var(--p-surface);"><h3 style="margin:0 0 6px; font-size:1.02rem;">Every course lives somewhere different</h3><p style="margin:0; color:var(--p-text-secondary); font-size:14px;">It only sees pixels and audio, so a web LMS, a desktop app, a PDF and a TV behave the same.</p></div>
-      <div style="padding:20px; border:1px solid var(--p-border); border-radius:var(--radius-md); background:var(--p-surface);"><h3 style="margin:0 0 6px; font-size:1.02rem;">Generic assistant prose reads as not yours</h3><p style="margin:0; color:var(--p-text-secondary); font-size:14px;">A persona file you own, lessons learned from your corrections, and a bounded reflection pass that nudges the voice without letting it wander.</p></div>
+    <section id="price">
+      <div class="wrap">
+        <div class="head">
+          <h2>One key, one term</h2>
+          <p>No account, no seat, no subscription. The key is minted when the payment clears and deleted when its window closes.</p>
+        </div>
+        <div class="price">
+          <div class="card">
+            <div class="amount" id="price-amount">—<small> per key</small></div>
+            <ul>
+              <li>Works in the iOS app, the broadcast extension and any OpenAI-compatible client</li>
+              <li>Endpoint: <span class="mono">gateway.innotel.us/v1</span></li>
+              <li>Spend inside the key is capped at a share of its price</li>
+              <li>Nothing to cancel — the key stops existing</li>
+            </ul>
+            <p class="note">Prices come from the shop, so they change there and nowhere else.</p>
+          </div>
+
+          <div class="card buy" id="buy-card">
+            <h3 style="margin:0 0 4px;font-size:1rem;">Buy a key</h3>
+            <p style="margin:0;color:var(--ink-3);font-size:13px;">Paid once through Magnate. The key is shown on the receipt page.</p>
+            <form id="buy-form" autocomplete="on">
+              <label for="buy-email">Email for the receipt</label>
+              <input id="buy-email" type="email" name="email" required placeholder="you@example.com">
+              <div class="two">
+                <div>
+                  <label for="buy-keys">Keys</label>
+                  <input id="buy-keys" type="number" name="keys" min="1" max="5" step="1" value="1">
+                </div>
+                <div style="display:flex;align-items:flex-end;">
+                  <span class="mono" id="buy-total" style="color:var(--ink-2);font-size:13.5px;"></span>
+                </div>
+              </div>
+              <button class="btn btn-1" id="buy-button" type="submit">Continue to payment</button>
+            </form>
+            <div class="verdict" id="buy-verdict" role="status" aria-live="polite"></div>
+            <p class="note" id="buy-fallback" hidden>
+              The shop did not answer from this browser. <a id="buy-link" href="https://magnate.innotel.us/coursemate">Buy at magnate.innotel.us</a> instead — the same keys, the same price.
+            </p>
+          </div>
+        </div>
       </div>
     </section>
 
-    <section style="padding:8px 0 28px;">
-      <h2 style="font-size:1.2rem; margin:0 0 14px;">What it does</h2>
-      <div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px;">
-      <div style="padding:20px; border:1px solid var(--p-border); border-radius:var(--radius-md); background:var(--p-surface);"><h3 style="margin:0 0 6px; font-size:1.02rem;">Watch</h3><p style="margin:0; color:var(--p-text-secondary); font-size:14px;">Changed frames are classified into a screen kind, a question and its options.</p></div>
-      <div style="padding:20px; border:1px solid var(--p-border); border-radius:var(--radius-md); background:var(--p-surface);"><h3 style="margin:0 0 6px; font-size:1.02rem;">Listen</h3><p style="margin:0; color:var(--p-text-secondary); font-size:14px;">Chunks are transcribed so the lecture becomes evidence a draft can cite.</p></div>
-      <div style="padding:20px; border:1px solid var(--p-border); border-radius:var(--radius-md); background:var(--p-surface);"><h3 style="margin:0 0 6px; font-size:1.02rem;">Remember</h3><p style="margin:0; color:var(--p-text-secondary); font-size:14px;">Slides, transcripts and readings become per-course facts and key terms.</p></div>
-      <div style="padding:20px; border:1px solid var(--p-border); border-radius:var(--radius-md); background:var(--p-surface);"><h3 style="margin:0 0 6px; font-size:1.02rem;">Decide</h3><p style="margin:0; color:var(--p-text-secondary); font-size:14px;">Quiz, test, essay, lecture or reading — routed, drafted, and recorded for review.</p></div>
+    <section>
+      <div class="wrap">
+        <div class="grid g2">
+          <div>
+            <div class="head"><h2>The desk</h2><p>Every decision, newest first, with what it saw and how sure it was.</p></div>
+            <blockquote class="quote">An answer card you can grade. A wrong answer plus the right one becomes a lesson, and the persona nudges toward your corrections instead of drifting into generic assistant prose.</blockquote>
+            <div class="row" style="margin-top:20px;">
+              <a class="btn btn-2" href="/desk">Open the desk →</a>
+            </div>
+          </div>
+          <div class="card">
+            <h3>The boundary, stated plainly</h3>
+            <p>CourseMate decides and drafts. It does not submit, click, or answer on your behalf — a vision-driven clicker breaks on real course pages, and a wrong auto-submit on a graded test cannot be undone. The card is the product; the click is yours.</p>
+            <p style="margin-top:12px;color:var(--ink-3);font-size:13px;">MIT licensed. Runs on your own machine, or on ours with a key.</p>
+          </div>
+        </div>
       </div>
     </section>
+  </main>
 
-    <section style="padding:8px 0 28px;">
-      <h2 style="font-size:1.2rem; margin:0 0 14px;">Quick start</h2>
-      <div style="display:grid; gap:10px;">
-        <div style="padding:14px 16px; border:1px solid var(--p-border); border-radius:var(--radius-sm); background:var(--p-bg-elevated); font-family:ui-monospace,monospace; font-size:13px;"><span style="color:var(--p-text-muted);">1</span> git clone https://github.com/innotelinc/coursemate.git<br><span style="color:var(--p-text-muted);"> </span> cd coursemate</div>
-<div style="padding:14px 16px; border:1px solid var(--p-border); border-radius:var(--radius-sm); background:var(--p-bg-elevated); font-family:ui-monospace,monospace; font-size:13px;"><span style="color:var(--p-text-muted);">2</span> npm test<br><span style="color:var(--p-text-muted);"> </span> COURSEMATE_API_KEY=… node src/server.js</div>
-<div style="padding:14px 16px; border:1px solid var(--p-border); border-radius:var(--radius-sm); background:var(--p-bg-elevated); font-family:ui-monospace,monospace; font-size:13px;"><span style="color:var(--p-text-muted);">3</span> curl -s localhost:8790/api/health<br><span style="color:var(--p-text-muted);"> </span> # push: configured, or the reason it is not</div>
+  <footer>
+    <div class="wrap">
+      <div class="foot">
+        <nav>
+          <a href="https://innotel.us">innotel.us</a>
+          <a href="https://subscribe.innotel.us">subscribe.innotel.us</a>
+          <a href="https://magnate.innotel.us/coursemate">Keys</a>
+          <a href="https://github.com/innotelinc/coursemate">Source</a>
+          <a href="https://github.com/innotelinc/coursemate-ios">iOS</a>
+        </nav>
+        <span>MIT · an Innotel Labs product</span>
       </div>
-    </section>
+      <p class="stack">Part of the <a href="https://github.com/innotelinc/innotel-platform-stack">Innotel Platform Stack</a> — LearningOps.</p>
+    </div>
+  </footer>
 
-    <section style="padding:8px 0 40px;">
-      <p style="color:var(--p-text-secondary); font-size:14px; max-width:70ch;">The agent decides and drafts. It does not submit — that boundary is deliberate, and it is documented in the README.</p>
-      <p style="color:var(--p-text-muted); font-size:13px;">
-        Part of the <a href="https://github.com/innotelinc/innotel-platform-stack">Innotel Platform Stack</a>
-        · <a href="https://github.com/innotelinc/coursemate/blob/main/docs/stack.md">docs/stack.md</a>
-        · MIT
-      </p>
-    </section>
-  </div>
-  <script>(function(){
-  var api=window.UnityTheme||window.OntrakTheme;if(!api)return;
-  function paint(){var now=api.mode();var all=document.querySelectorAll('[data-theme-mode]');
-    for(var i=0;i<all.length;i++){all[i].setAttribute('aria-pressed',String(all[i].getAttribute('data-theme-mode')===now));}}
-  var buttons=document.querySelectorAll('[data-theme-mode]');
-  for(var i=0;i<buttons.length;i++){buttons[i].addEventListener('click',function(){api.setMode(this.getAttribute('data-theme-mode'));});}
-  window.addEventListener('unity:theme',paint);window.addEventListener('ontrak:theme',paint);paint();
-})();</script>
+  <script>
+  (function () {
+    // Theme: the shared switcher owns the attribute, this only keeps the
+    // buttons honest about which mode is live.
+    var api = window.UnityTheme || window.OntrakTheme;
+    if (api) {
+      function paint() {
+        var now = api.mode();
+        var all = document.querySelectorAll('[data-theme-mode]');
+        for (var i = 0; i < all.length; i++) {
+          all[i].setAttribute('aria-pressed', String(all[i].getAttribute('data-theme-mode') === now));
+        }
+      }
+      var buttons = document.querySelectorAll('[data-theme-mode]');
+      for (var i = 0; i < buttons.length; i++) {
+        buttons[i].addEventListener('click', function () { api.setMode(this.getAttribute('data-theme-mode')); });
+      }
+      window.addEventListener('unity:theme', paint);
+      window.addEventListener('ontrak:theme', paint);
+      paint();
+    }
+
+    var SHOP = 'https://magnate.innotel.us';
+    var plan = null;
+
+    function money(cents) {
+      if (!cents && cents !== 0) return '';
+      return '$' + (cents / 100).toFixed(cents % 100 === 0 ? 0 : 2);
+    }
+
+    function say(el, text, kind) {
+      el.textContent = text;
+      el.className = 'verdict' + (kind ? ' ' + kind : '');
+    }
+
+    // ── check a key ──────────────────────────────────────────────────
+    var form = document.getElementById('key-form');
+    var input = document.getElementById('key-input');
+    var button = document.getElementById('key-check');
+    var verdict = document.getElementById('key-verdict');
+
+    form.addEventListener('submit', function (event) {
+      event.preventDefault();
+      var key = input.value.trim();
+      if (!key) { say(verdict, 'Paste a key first.', 'bad'); return; }
+      say(verdict, 'Asking the gateway…', 'wait');
+      button.disabled = true;
+
+      fetch('/api/key', { headers: { Authorization: 'Bearer ' + key } })
+        .then(function (res) {
+          if (res.status === 401) { throw new Error('That key was not accepted. Check you copied all of it, or buy a new one.'); }
+          if (!res.ok) { throw new Error('The server answered ' + res.status + '.'); }
+          return res.json();
+        })
+        .then(function (body) {
+          if (body.checked) {
+            say(verdict, 'Key accepted — paste it into Settings in the app.', 'ok');
+          } else {
+            // A development server has no key authority. Saying "valid" there
+            // would be a claim nothing checked.
+            say(verdict, 'This server has no key check enabled, so it accepted anything.', 'wait');
+          }
+        })
+        .catch(function (err) { say(verdict, err.message, 'bad'); })
+        .then(function () { button.disabled = false; });
+    });
+
+    // ── prices ───────────────────────────────────────────────────────
+    var amount = document.getElementById('price-amount');
+    var totalEl = document.getElementById('buy-total');
+    var keysEl = document.getElementById('buy-keys');
+
+    function total() {
+      if (!plan || !plan.cents) { totalEl.textContent = ''; return; }
+      var n = Math.max(1, Math.min(5, Number(keysEl.value) || 1));
+      totalEl.textContent = money(plan.cents * n);
+    }
+    if (keysEl) keysEl.addEventListener('input', total);
+
+    fetch(SHOP + '/api/plans?service=coursemate')
+      .then(function (res) { if (!res.ok) throw new Error(String(res.status)); return res.json(); })
+      .then(function (body) {
+        var list = Array.isArray(body) ? body : (body.plans || []);
+        var first = list.filter(function (p) { return p && p.slug; })[0];
+        if (!first) throw new Error('no plan');
+        var cents = first.pricePerUnitCents || first.pricePerKeyCents || first.priceMonthlyCents || 0;
+        plan = { slug: first.slug, cents: cents };
+        if (cents) {
+          amount.innerHTML = money(cents) + '<small> per key</small>';
+        } else {
+          amount.innerHTML = 'Priced at checkout<small></small>';
+        }
+        total();
+      })
+      .catch(function () {
+        // No price list means no safe way to start a checkout from here, so the
+        // form steps aside for the shop page rather than guessing a price.
+        amount.innerHTML = 'See the shop<small></small>';
+        var form = document.getElementById('buy-form');
+        if (form) form.hidden = true;
+        var fallback = document.getElementById('buy-fallback');
+        if (fallback) fallback.hidden = false;
+      });
+
+    // ── buy ──────────────────────────────────────────────────────────
+    var buyForm = document.getElementById('buy-form');
+    var buyButton = document.getElementById('buy-button');
+    var buyVerdict = document.getElementById('buy-verdict');
+
+    if (buyForm) {
+      buyForm.addEventListener('submit', function (event) {
+        event.preventDefault();
+        if (!plan) { say(buyVerdict, 'The shop is not answering, so start from magnate.innotel.us/coursemate.', 'bad'); return; }
+        var email = document.getElementById('buy-email').value.trim();
+        var keys = Math.max(1, Math.min(5, Number(keysEl.value) || 1));
+        if (!email) { say(buyVerdict, 'An email is needed for the receipt.', 'bad'); return; }
+
+        say(buyVerdict, 'Starting the payment…', 'wait');
+        buyButton.disabled = true;
+
+        fetch(SHOP + '/api/coursemate/checkout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ planSlug: plan.slug, email: email, keys: keys })
+        })
+          .then(function (res) { return res.json().then(function (body) { return { ok: res.ok, body: body }; }); })
+          .then(function (result) {
+            if (!result.ok || !result.body.url) {
+              throw new Error(result.body.error || 'The shop refused the checkout.');
+            }
+            window.location.href = result.body.url;
+          })
+          .catch(function (err) {
+            say(buyVerdict, err.message + ' You can also buy at magnate.innotel.us/coursemate.', 'bad');
+            buyButton.disabled = false;
+          });
+      });
+    }
+  })();
+  </script>
 </body>
 </html>
