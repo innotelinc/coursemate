@@ -1,0 +1,15 @@
+[Unit]
+Description=Check for an unreleased app tag every ten minutes
+
+[Timer]
+# Ten minutes, because that is the shortest gap that still costs nothing and
+# long enough that a tag pushed now is being built by the time anyone looks. The
+# workflow's own twenty-minute schedule stays as the path that works if this host
+# is down; when both fire, the concurrency group and the release marker make the
+# second one a no-op.
+OnBootSec=3m
+OnCalendar=*:0/10
+Persistent=false
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,15 @@
+[Unit]
+Description=Dispatch the iOS release for a tag GitHub's scheduler missed
+Documentation=https://github.com/innotelinc/coursemate/blob/master/.github/workflows/ios-release.yml
+
+# Runs where the `gh` credential and the App Store Connect secrets live, and
+# nowhere else: this only dispatches a workflow, the build itself still runs on
+# GitHub's macOS runner.
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/coursemate-tag-release.sh
+# The script exits 0 when there is nothing to do, which is most runs; a failure
+# here means the tag list could not be read or the dispatch was refused, and
+# that is worth seeing in `systemctl status`.
