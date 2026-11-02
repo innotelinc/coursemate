@@ -6,6 +6,13 @@ name: ios-release
 # it. The app's own release.yml stays the long-term home; this is the path that
 # works today without copying a private key to a second repository.
 on:
+  # A tag in the app repository is the release trigger. Its own release.yml
+  # cannot sign anything — the App Store Connect key and the distribution
+  # identity live here — so this looks for tags that have not been built yet and
+  # releases the newest one. Twenty minutes is short enough that a tag still
+  # feels like a trigger, and long enough that polling costs nothing.
+  schedule:
+    - cron: "*/20 * * * *"
   workflow_dispatch:
     inputs:
       version:
@@ -14,14 +21,61 @@ on:
         default: "1.0"
 
 permissions:
-  contents: read
+  # Write, for one thing only: the ios-release/<tag> marker that keeps the
+  # schedule from building the same tag twice.
+  contents: write
 
 concurrency:
   group: ios-release
   cancel-in-progress: false
 
 jobs:
+  # What to release, and whether there is anything to release at all. Linux,
+  # because it only reads tags: the app repository is public, so seeing them
+  # needs no token, and no credential is touched.
+  pick:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.pick.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pick the newest unreleased tag
+        id: pick
+        run: |
+          set -euo pipefail
+          APP=innotelinc/coursemate-ios
+
+          # A dispatch says which version outright.
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            echo "version=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          latest=$(git ls-remote --tags --refs "https://github.com/$APP" \
+            | awk '{print $2}' | sed 's#refs/tags/##' \
+            | grep -E '^v[0-9]+(\.[0-9]+)*$' | sort -V | tail -n 1 || true)
+          if [ -z "$latest" ]; then
+            echo "no version tags in $APP — nothing to release"
+            exit 0
+          fi
+
+          # ios-release/<tag> lives here, beside the credentials, so the poll can
+          # tell a tag it has already built from one pushed a minute ago.
+          released=$(git ls-remote --tags --refs origin 'refs/tags/ios-release/*' \
+            | awk '{print $2}' | sed 's#refs/tags/ios-release/##' || true)
+          if printf '%s\n' "$released" | grep -qx "${latest#v}"; then
+            echo "$latest is already released"
+            exit 0
+          fi
+
+          echo "releasing $latest"
+          echo "version=${latest#v}" >> "$GITHUB_OUTPUT"
+
   release:
+    needs: pick
+    # Empty when there is nothing new: the macOS job does not start at all.
+    if: needs.pick.outputs.version != ''
     runs-on: macos-15
 
     env:
@@ -157,7 +211,7 @@ jobs:
       - name: Version
         run: |
           set -euo pipefail
-          echo "MARKETING_VERSION=${{ github.event.inputs.version }}" >> "$GITHUB_ENV"
+          echo "MARKETING_VERSION=${{ needs.pick.outputs.version }}" >> "$GITHUB_ENV"
           echo "BUILD_NUMBER=${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
 
       # App Store Connect refuses anything below the iOS 26 SDK, and the image
@@ -306,3 +360,14 @@ jobs:
             ${{ runner.temp }}/upload.log
           if-no-files-found: ignore
           retention-days: 14
+
+      # The marker is what makes the schedule idempotent: a tag that has one is
+      # not built again on the next poll.
+      - name: Remember this tag was released
+        if: github.event_name == 'schedule'
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "ios-release/${MARKETING_VERSION}"
+          git push origin "refs/tags/ios-release/${MARKETING_VERSION}"
