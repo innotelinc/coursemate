@@ -176,6 +176,8 @@ export function loadConfig(overrides = {}) {
     // The shop's API origin. The server calls it directly so a purchase does not
     // depend on a browser preflight the shop may not answer yet.
     shopApiUrl: (env.COURSEMATE_SHOP_API || 'https://magnate.innotel.us').replace(/\/$/, ''),
+    // The last price list that arrived, so a shop outage still renders a price.
+    shopCachePath: join(dataDir, 'plans-cache.json'),
 
     mode: env.COURSEMATE_MODE === 'auto' ? 'auto' : 'assist',
     actionWebhook: env.COURSEMATE_ACTION_WEBHOOK || '',

@@ -115,6 +115,17 @@ test('the canonical host is not redirected at all', async () => {
   assert.equal(res.status, 200);
 });
 
+test('the receipt page is served, and its lookup validates the reference', async () => {
+  const page = await ask('/receipt');
+  assert.equal(page.status, 200);
+  assert.match(page.body, /session_id/);
+
+  // Public — a buyer has no key yet, and the only thing they hold is the Stripe
+  // session id. A missing one is the buyer's mistake, not an auth failure.
+  const missing = await ask('/api/receipt');
+  assert.equal(missing.status, 400);
+});
+
 test('/buy is the price card under its own name', async () => {
   const res = await ask('/buy');
   assert.equal(res.status, 200);

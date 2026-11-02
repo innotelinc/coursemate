@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en" data-scheme="operations">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Your CourseMate key</title>
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b0d10'/%3E%3Ccircle cx='32' cy='32' r='9' fill='%237dd3fc'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/unity-theme.css">
+  <script>window.UNITY_DEFAULT_SCHEME = "operations";</script>
+  <script src="/unity-theme.js"></script>
+  <style>
+    :root {
+      --bg: var(--canvas, #0a0b0e); --card: var(--surface, #12141a);
+      --card-2: var(--surface-muted, #171a21); --line: var(--line, #242833);
+      --ink: var(--ink, #f2f4f8); --ink-2: var(--ink-soft, #a9b1c1); --ink-3: var(--ink-faint, #6f7a8c);
+      --brand: var(--brand, #7dd3fc); --ok: var(--ok, #34d399); --bad: #f87171;
+      --radius: var(--radius, 16px); --radius-sm: var(--radius-sm, 10px);
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.6 ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif; -webkit-font-smoothing: antialiased; }
+    a { color: var(--brand); text-decoration: none; }
+    a:hover { color: var(--brand); text-decoration: underline; }
+    .wrap { max-width: 720px; margin: 0 auto; padding: 64px 22px; }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 650; color: var(--ink); margin-bottom: 36px; }
+    .brand .mark { width: 26px; height: 26px; border-radius: 9px; display: grid; place-items: center; background: rgba(125,211,252,.12); border: 1px solid rgba(125,211,252,.35); }
+    .brand .mark::after { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--brand); }
+    h1 { font-size: clamp(1.6rem, 4vw, 2.1rem); letter-spacing: -.02em; margin: 0 0 10px; }
+    .sub { color: var(--ink-2); margin: 0 0 26px; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; margin-bottom: 14px; }
+    .key { display: flex; gap: 10px; align-items: center; }
+    .key code { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; font-family: "JetBrains Mono", ui-monospace, Menlo, monospace; font-size: 13.5px; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 10px 12px; }
+    button { font: inherit; font-size: 13px; padding: 10px 14px; border-radius: var(--radius-sm); border: 1px solid var(--brand); background: var(--brand); color: #06222e; font-weight: 600; cursor: pointer; flex: 0 0 auto; }
+    button.ghost { background: transparent; color: var(--ink-2); border-color: var(--line); }
+    .meta { color: var(--ink-3); font-size: 12.5px; margin-top: 10px; }
+    .state { font-size: 14px; color: var(--ink-2); min-height: 22px; }
+    .state.bad { color: var(--bad); }
+    .steps { margin: 26px 0 0; padding: 0; list-style: none; }
+    .steps li { color: var(--ink-2); font-size: 14px; padding: 6px 0 6px 24px; position: relative; }
+    .steps li::before { content: "→"; position: absolute; left: 0; color: var(--brand); }
+    .foot { margin-top: 34px; color: var(--ink-3); font-size: 12.5px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <a class="brand" href="/"><span class="mark"></span><span>coursemate</span></a>
+
+    <h1 id="title">Getting your key…</h1>
+    <p class="sub" id="sub">The payment is confirmed by the gateway, which takes a moment. This page checks by itself — no need to reload.</p>
+
+    <div id="keys"></div>
+    <div class="state" id="state"></div>
+
+    <ol class="steps" id="steps">
+      <li>Copy a key from above.</li>
+      <li>Open CourseMate → Settings → API key, and paste it.</li>
+      <li>Start a session, then tap Start broadcast and switch to the course.</li>
+    </ol>
+
+    <p class="foot">Lost this page? The link is in your receipt from Stripe, and the key stops working when its term ends. <a href="/">CourseMate</a> · <a href="/buy">Buy another key</a></p>
+  </div>
+
+  <script>
+  (function () {
+    var session = new URLSearchParams(location.search).get('session_id') || '';
+    var keysEl = document.getElementById('keys');
+    var stateEl = document.getElementById('state');
+    var titleEl = document.getElementById('title');
+    var subEl = document.getElementById('sub');
+    var tries = 0;
+
+    function say(text, bad) { stateEl.textContent = text; stateEl.className = 'state' + (bad ? ' bad' : ''); }
+
+    function show(rows) {
+      keysEl.innerHTML = '';
+      rows.forEach(function (row) {
+        var card = document.createElement('div');
+        card.className = 'card';
+        var key = document.createElement('div');
+        key.className = 'key';
+        var code = document.createElement('code');
+        // A key is shown whole: the buyer has to copy it, and anything shorter is
+        // a key nobody can use. The page is noindex and only reachable by the
+        // session id in the Stripe redirect.
+        code.textContent = row.key || '—';
+        var copy = document.createElement('button');
+        copy.textContent = 'Copy';
+        copy.addEventListener('click', function () {
+          navigator.clipboard.writeText(row.key || '').then(function () {
+            copy.textContent = 'Copied';
+            setTimeout(function () { copy.textContent = 'Copy'; }, 1600);
+          });
+        });
+        key.appendChild(code);
+        key.appendChild(copy);
+        card.appendChild(key);
+
+        var meta = document.createElement('div');
+        meta.className = 'meta';
+        var bits = [];
+        if (row.expires_at) bits.push('works until ' + new Date(row.expires_at + 'Z').toLocaleDateString());
+        if (row.state) bits.push(row.state);
+        meta.textContent = bits.join(' · ');
+        card.appendChild(meta);
+        keysEl.appendChild(card);
+      });
+    }
+
+    function poll() {
+      if (!session) {
+        titleEl.textContent = 'No checkout on this link';
+        subEl.textContent = 'Open the link from your Stripe receipt — it carries the reference this page needs.';
+        say('', false);
+        document.getElementById('steps').hidden = true;
+        return;
+      }
+
+      fetch('/api/receipt?session_id=' + encodeURIComponent(session))
+        .then(function (res) { return res.json().then(function (b) { return { ok: res.ok, body: b }; }); })
+        .then(function (r) {
+          if (!r.ok) throw new Error(r.body.error || 'The shop could not answer.');
+          if (!r.body.ready) {
+            tries++;
+            if (r.body.failed) { say('The key could not be created. Reply to your receipt and it will be fixed.', true); return; }
+            say('Waiting for the payment to settle… (' + tries + ')');
+            if (tries < 30) setTimeout(poll, 2000);
+            else say('Still settling. This page is safe to leave — the link keeps working.', false);
+            return;
+          }
+          var live = (r.body.keys || []).filter(function (k) { return k.state === 'active' && k.key; });
+          if (!live.length) {
+            titleEl.textContent = 'This key has expired';
+            subEl.textContent = 'Its window has closed and the key was deleted from the gateway. A new one is one click away.';
+            say('', false);
+            document.getElementById('steps').hidden = true;
+            return;
+          }
+          titleEl.textContent = live.length === 1 ? 'Your key is ready' : 'Your ' + live.length + ' keys are ready';
+          subEl.textContent = 'Paste one into CourseMate → Settings. Each key works on any number of lectures until its term ends.';
+          show(live);
+          say('', false);
+        })
+        .catch(function (e) { say(e.message, true); });
+    }
+
+    poll();
+  })();
+  </script>
+</body>
+</html>

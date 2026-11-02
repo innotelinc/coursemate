@@ -164,6 +164,9 @@ export function createApp(cfg, { fetchImpl } = {}) {
     // `/buy` is the price card under its own name, so a link that is meant to
     // sell can be shared without a fragment and still land on the form.
     if (rel === '/buy' || rel === '/buy/') rel = '/index.html';
+    // The receipt is its own page: it is reached from Stripe's redirect with a
+    // session id, and it says something different from the sales page.
+    if (rel === '/receipt' || rel === '/receipt/') rel = '/receipt.html';
     // The root is the landing page, so its tree is asked first and the desk's
     // files are the fallback for anything the landing page does not carry.
     let roots = [LANDING_DIR, PUBLIC_DIR];
@@ -272,6 +275,16 @@ export function createApp(cfg, { fetchImpl } = {}) {
     },
 
     'GET /api/plans': async () => ({ plans: await shop.plans() }),
+
+    // The receipt. A buyer who closed the tab still owns the key, and the only
+    // reference either side has is the Stripe session id in the redirect.
+    'GET /api/receipt': async ({ query }) => {
+      const id = String(query.get('session_id') || '').trim();
+      if (!/^cs_[A-Za-z0-9_]{8,200}$/.test(id)) {
+        throw Object.assign(new Error('a Stripe session_id is required'), { status: 400 });
+      }
+      return shop.receipt(id);
+    },
 
     'GET /api/key': async () => {
       // The gateway answers one question about a key — is it live — and no
@@ -445,7 +458,10 @@ export function createApp(cfg, { fetchImpl } = {}) {
     if (!url.pathname.startsWith('/api/')) return serveStatic(req, res, url.pathname);
 
     // A buyer has no key yet, which is the whole reason these two exist.
-    const isPublic = (key === 'POST /api/checkout' || key === 'GET /api/plans');
+    const isPublic =
+      key === 'POST /api/checkout' ||
+      key === 'GET /api/plans' ||
+      key === 'GET /api/receipt';
     if (!isPublic && !(await authorised(req))) return json(res, 401, { error: 'unauthorized' });
 
     const handler = routes[key];
