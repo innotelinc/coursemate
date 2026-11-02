@@ -115,6 +115,16 @@ test('the canonical host is not redirected at all', async () => {
   assert.equal(res.status, 200);
 });
 
+test('buying is reachable without a key, and still validates', async () => {
+  // A buyer has no key — that is what they are buying — so this route sits
+  // outside the auth gate. A 400 proves it got past that gate and stopped at
+  // the body, which is the whole distinction; a 401 here would mean the page's
+  // only purchase button could never work.
+  const res = await ask('/api/checkout', { method: 'POST' });
+  assert.equal(res.status, 400);
+  assert.match(res.body, /email/);
+});
+
 test('a key is checked against the bearer this server actually accepts', async () => {
   const anonymous = await ask('/api/key');
   assert.equal(anonymous.status, 401);

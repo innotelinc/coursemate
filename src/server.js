@@ -8,6 +8,7 @@ import { makeGateway } from './gateway.js';
 import { makeBrain } from './brain.js';
 import { makePersonaSource, applyDrift } from './persona.js';
 import { makeStudy } from './study.js';
+import { makeShop } from './shop.js';
 import { log, warn, nowIso } from './util.js';
 
 const PUBLIC_DIR = join(ROOT, 'public');
@@ -58,6 +59,7 @@ export function createApp(cfg, { fetchImpl } = {}) {
   );
   const brain = makeBrain({ cfg, store, gateway, personaSource });
   const study = makeStudy({ cfg, store, gateway, personaSource });
+  const shop = makeShop(cfg, fetchImpl);
 
   function json(res, status, body) {
     const payload = JSON.stringify(body);
@@ -253,6 +255,21 @@ export function createApp(cfg, { fetchImpl } = {}) {
     // real verdict from the gateway or a development server saying yes to
     // everything, which the site shows differently rather than claiming a key
     // is good when nothing looked at it.
+    // Buying is the one thing a visitor does before they have a key, so it
+    // cannot sit behind `authorised`. The server composes the request to the
+    // shop, which is also what stops a buyer swapping in another service's plan.
+    'POST /api/checkout': async ({ body }) => {
+      const email = String(body.email || '').trim();
+      const planSlug = String(body.plan_slug || body.planSlug || '').trim();
+      const keys = Math.max(1, Math.min(5, Number(body.keys) || 1));
+      if (!email || !planSlug) {
+        throw Object.assign(new Error('email and plan_slug are required'), { status: 400 });
+      }
+      return shop.buy({ planSlug, email, keys });
+    },
+
+    'GET /api/plans': async () => ({ plans: await shop.plans() }),
+
     'GET /api/key': async () => ({
       ok: true,
       checked: Boolean(cfg.gatewayKeys || cfg.token),
@@ -410,7 +427,9 @@ export function createApp(cfg, { fetchImpl } = {}) {
 
     if (!url.pathname.startsWith('/api/')) return serveStatic(req, res, url.pathname);
 
-    if (!(await authorised(req))) return json(res, 401, { error: 'unauthorized' });
+    // A buyer has no key yet, which is the whole reason these two exist.
+    const isPublic = (key === 'POST /api/checkout' || key === 'GET /api/plans');
+    if (!isPublic && !(await authorised(req))) return json(res, 401, { error: 'unauthorized' });
 
     const handler = routes[key];
     if (!handler) return json(res, 404, { error: `no route ${key}` });

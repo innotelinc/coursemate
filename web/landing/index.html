@@ -379,13 +379,16 @@
     }
     if (keysEl) keysEl.addEventListener('input', total);
 
-    fetch(SHOP + '/api/plans?service=coursemate')
+    // Both of these go through this origin: the server is what talks to the
+    // shop, so a preflight the shop has not been taught to answer cannot make
+    // the only purchase path fail.
+    fetch('/api/plans')
       .then(function (res) { if (!res.ok) throw new Error(String(res.status)); return res.json(); })
       .then(function (body) {
         var list = Array.isArray(body) ? body : (body.plans || []);
         var first = list.filter(function (p) { return p && p.slug; })[0];
         if (!first) throw new Error('no plan');
-        var cents = first.pricePerUnitCents || first.pricePerKeyCents || first.priceMonthlyCents || 0;
+        var cents = first.pricePerUnitCents || first.pricePerKeyCents || 0;
         plan = { slug: first.slug, cents: cents };
         if (cents) {
           amount.innerHTML = money(cents) + '<small> per key</small>';
@@ -420,10 +423,10 @@
         say(buyVerdict, 'Starting the payment…', 'wait');
         buyButton.disabled = true;
 
-        fetch(SHOP + '/api/coursemate/checkout', {
+        fetch('/api/checkout', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ planSlug: plan.slug, email: email, keys: keys })
+          body: JSON.stringify({ plan_slug: plan.slug, email: email, keys: keys })
         })
           .then(function (res) { return res.json().then(function (body) { return { ok: res.ok, body: body }; }); })
           .then(function (result) {

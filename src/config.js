@@ -173,6 +173,9 @@ export function loadConfig(overrides = {}) {
     // the site only sends the buyer there, so the shop is one link and never a
     // second price list to keep in step.
     shopUrl: (env.COURSEMATE_SHOP_URL || 'https://magnate.innotel.us/coursemate').replace(/\/$/, ''),
+    // The shop's API origin. The server calls it directly so a purchase does not
+    // depend on a browser preflight the shop may not answer yet.
+    shopApiUrl: (env.COURSEMATE_SHOP_API || 'https://magnate.innotel.us').replace(/\/$/, ''),
 
     mode: env.COURSEMATE_MODE === 'auto' ? 'auto' : 'assist',
     actionWebhook: env.COURSEMATE_ACTION_WEBHOOK || '',
