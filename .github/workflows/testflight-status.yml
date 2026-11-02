@@ -1,0 +1,76 @@
+name: testflight-status
+
+# What happened to the build after the upload went green.
+#
+# `ios-release` stops at "Apple accepted the upload". Processing is
+# asynchronous — a build can still be rejected minutes later for a missing
+# privacy string, an invalid icon or export compliance — so the answer lives
+# behind the App Store Connect API rather than in the release log. This asks
+# that question without rebuilding anything.
+on:
+  workflow_dispatch:
+    inputs:
+      build:
+        description: Build number to wait for (blank lists recent builds only)
+        required: false
+        default: ""
+      bundle:
+        description: Bundle identifier
+        required: false
+        default: "us.innotel.coursemate"
+      timeout:
+        description: Seconds to wait for a PROCESSING build
+        required: false
+        default: "900"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: testflight-status
+  cancel-in-progress: true
+
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    env:
+      ASC_KEY: ${{ secrets.APP_STORE_CONNECT_KEY }}
+      ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the credentials are present
+        run: |
+          set -euo pipefail
+          missing=()
+          [ -n "${ASC_KEY:-}" ]      || missing+=("APP_STORE_CONNECT_KEY")
+          [ -n "${ASC_KEY_ID:-}" ]   || missing+=("APP_STORE_CONNECT_KEY_ID")
+          [ -n "${ASC_ISSUER_ID:-}" ] || missing+=("APP_STORE_CONNECT_ISSUER_ID")
+          if [ ${#missing[@]} -gt 0 ]; then
+            for m in "${missing[@]}"; do echo "::error::missing secret: $m"; done
+            exit 1
+          fi
+
+      - name: Write the key
+        run: |
+          set -euo pipefail
+          KEY="$RUNNER_TEMP/AuthKey.p8"
+          printf '%s\n' "$ASC_KEY" > "$KEY"
+          chmod 600 "$KEY"
+          openssl pkey -in "$KEY" -noout >/dev/null
+          echo "KEY_PATH=$KEY" >> "$GITHUB_ENV"
+
+      - name: Builds
+        run: |
+          set -uo pipefail
+          args=(--key "$KEY_PATH" --kid "$ASC_KEY_ID" --issuer "$ASC_ISSUER_ID"
+                --bundle "${{ github.event.inputs.bundle }}")
+          if [ -n "${{ github.event.inputs.build }}" ]; then
+            args+=(--watch "${{ github.event.inputs.build }}"
+                   --timeout "${{ github.event.inputs.timeout }}")
+          fi
+          node tools/asc.mjs builds "${args[@]}" | tee "$RUNNER_TEMP/builds.txt"
+          echo "---"
+          cat "$RUNNER_TEMP/builds.txt"

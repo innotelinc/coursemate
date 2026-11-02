@@ -98,6 +98,19 @@ jobs:
           cp "$KEY_FILE" "$HOME/.appstoreconnect/private_keys/"
           echo "KEY_PATH=$KEY_FILE" >> "$GITHUB_ENV"
 
+      # Before anything is built: does Apple actually accept this credential set?
+      # Answering it here is the difference between "401 at upload" twenty minutes
+      # later and a named secret. The key parses in both cases — an APNs key is a
+      # valid ES256 .p8 too — so parsing proved nothing, and a swapped key id read
+      # as a network error twice.
+      - name: Apple accepts these credentials
+        run: |
+          node tools/asc.mjs probe \
+            --key "$KEY_PATH" \
+            --kid "$ASC_KEY_ID" \
+            --issuer "$ASC_ISSUER_ID" \
+            --bundle us.innotel.coursemate
+
       - name: Project matches its generator
         working-directory: ios
         run: |
