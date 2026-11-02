@@ -361,10 +361,12 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
-      # The marker is what makes the schedule idempotent: a tag that has one is
-      # not built again on the next poll.
+      # The marker is what makes this idempotent: a tag that has one is not built
+      # again on the next poll. Every path that releases writes it, not just the
+      # schedule — a dispatch that skipped this looked finished and then rebuilt
+      # the same tag on the next tick, once every ten minutes, forever.
       - name: Remember this tag was released
-        if: github.event_name == 'schedule'
+        if: success()
         run: |
           set -euo pipefail
           git config user.name  "github-actions[bot]"
