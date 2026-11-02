@@ -161,6 +161,9 @@ export function createApp(cfg, { fetchImpl } = {}) {
    */
   async function serveStatic(req, res, pathname) {
     let rel = pathname === '/' ? '/index.html' : pathname;
+    // `/buy` is the price card under its own name, so a link that is meant to
+    // sell can be shared without a fragment and still land on the form.
+    if (rel === '/buy' || rel === '/buy/') rel = '/index.html';
     // The root is the landing page, so its tree is asked first and the desk's
     // files are the fallback for anything the landing page does not carry.
     let roots = [LANDING_DIR, PUBLIC_DIR];
@@ -270,14 +273,28 @@ export function createApp(cfg, { fetchImpl } = {}) {
 
     'GET /api/plans': async () => ({ plans: await shop.plans() }),
 
-    'GET /api/key': async () => ({
-      ok: true,
-      checked: Boolean(cfg.gatewayKeys || cfg.token),
-      gateway: cfg.gatewayUrl,
-      shop: cfg.shopUrl,
-      server: cfg.publicUrl,
-      checked_at: nowIso(),
-    }),
+    'GET /api/key': async () => {
+      // The gateway answers one question about a key — is it live — and no
+      // question about when it dies. The term is therefore the shop's statement
+      // (read from the catalog), and `term_days` is null rather than guessed when
+      // the catalog does not say.
+      let termDays = null;
+      try {
+        const priced = await shop.plans();
+        termDays = priced.find((p) => p.termDays)?.termDays ?? null;
+      } catch {
+        // A shop that cannot be reached must not make a valid key look invalid.
+      }
+      return {
+        ok: true,
+        checked: Boolean(cfg.gatewayKeys || cfg.token),
+        gateway: cfg.gatewayUrl,
+        shop: cfg.shopUrl,
+        server: cfg.publicUrl,
+        term_days: termDays,
+        checked_at: nowIso(),
+      };
+    },
 
     'GET /api/health': async () => ({
       ok: true,

@@ -17,6 +17,24 @@ import { warn } from './util.js';
 export function makeShop(cfg, fetchImpl) {
   const call = fetchImpl || fetch;
 
+  // The price list changes when an operator edits the catalog, which is rare and
+  // never mid-second. Cached so the site's "check my key" box does not turn into
+  // a request per keystroke against the shop.
+  let cached = { at: 0, plans: [] };
+  const PLAN_TTL_MS = 5 * 60_000;
+
+  /**
+   * How long a key lasts, as the shop advertises it. The catalog carries the
+   * term in prose ("120 days of gateway access") rather than a field, so it is
+   * read from there and left null when it is not stated — a guessed countdown
+   * is worse than none.
+   */
+  function termDays(plan) {
+    const words = [plan.description, ...(plan.features || [])].filter(Boolean).join(' ');
+    const match = /(\d{1,4})\s*days?\b/i.exec(words);
+    return match ? Number(match[1]) : null;
+  }
+
   /** Returns the Stripe URL to send the buyer to. Throws with a usable reason. */
   async function buy({ planSlug, email, keys }) {
     let res;
@@ -59,13 +77,18 @@ export function makeShop(cfg, fetchImpl) {
    * response and so a price change is one catalog edit with no deploy.
    */
   async function plans() {
+    if (cached.plans.length && Date.now() - cached.at < PLAN_TTL_MS) return cached.plans;
+
     const res = await call(`${cfg.shopApiUrl}/api/plans?service=coursemate`, {
       signal: AbortSignal.timeout(8_000),
     });
     if (!res.ok) throw Object.assign(new Error(`the shop answered ${res.status}`), { status: 502 });
     const body = await res.json();
-    const list = Array.isArray(body) ? body : body.plans || [];
-    return list.filter((p) => p && p.slug);
+    const list = (Array.isArray(body) ? body : body.plans || [])
+      .filter((p) => p && p.slug)
+      .map((p) => ({ ...p, termDays: termDays(p) }));
+    cached = { at: Date.now(), plans: list };
+    return list;
   }
 
   return { buy, plans };

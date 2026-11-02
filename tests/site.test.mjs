@@ -115,6 +115,24 @@ test('the canonical host is not redirected at all', async () => {
   assert.equal(res.status, 200);
 });
 
+test('/buy is the price card under its own name', async () => {
+  const res = await ask('/buy');
+  assert.equal(res.status, 200);
+  assert.match(res.body, /id="price"/);
+  assert.match(res.body, /Continue to payment/);
+});
+
+// The purchase path is three strings in the page that have to agree with three
+// routes on the server. Renaming one of them breaks buying for everybody while
+// every page still renders, so the pairing is pinned here.
+test('the page and the server agree on the purchase path', async () => {
+  const page = (await ask('/')).body;
+  for (const path of ['/api/key', '/api/plans', '/api/checkout']) {
+    assert.ok(page.includes(`fetch('${path}'`), `the page calls ${path}`);
+  }
+  assert.match(page, /Continue to payment/);
+});
+
 test('buying is reachable without a key, and still validates', async () => {
   // A buyer has no key — that is what they are buying — so this route sits
   // outside the auth gate. A 400 proves it got past that gate and stopped at

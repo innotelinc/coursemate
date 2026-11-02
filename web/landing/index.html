@@ -325,6 +325,12 @@
     var SHOP = 'https://magnate.innotel.us';
     var plan = null;
 
+    // A shared /buy link should open on the price rather than on the hero.
+    if (location.pathname.replace(/\/$/, '') === '/buy') {
+      var target = document.getElementById('price');
+      if (target) target.scrollIntoView({ block: 'start' });
+    }
+
     function money(cents) {
       if (!cents && cents !== 0) return '';
       return '$' + (cents / 100).toFixed(cents % 100 === 0 ? 0 : 2);
@@ -356,7 +362,11 @@
         })
         .then(function (body) {
           if (body.checked) {
-            say(verdict, 'Key accepted — paste it into Settings in the app.', 'ok');
+            // The gateway knows whether a key is live, not when it expires, so
+            // this states the term the shop sells rather than a countdown it
+            // cannot see.
+            var term = body.term_days ? ' Covers ' + body.term_days + ' days from purchase.' : '';
+            say(verdict, 'Key accepted.' + term + ' Paste it into Settings in the app.', 'ok');
           } else {
             // A development server has no key authority. Saying "valid" there
             // would be a claim nothing checked.
