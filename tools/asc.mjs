@@ -21,7 +21,8 @@ function usage() {
   node tools/asc.mjs builds --key <p8> --kid <id> --issuer <uuid> [--bundle <bundleId>] [--watch <build>] [--timeout <seconds>]
   node tools/asc.mjs certs  --key <p8> --kid <id> --issuer <uuid>
   node tools/asc.mjs revoke --key <p8> --kid <id> --issuer <uuid> --id <certId>[,<certId>] [--confirm] [--allow-distribution]
-  node tools/asc.mjs mint   --key <p8> --kid <id> --issuer <uuid> --csr <base64 der> [--type DISTRIBUTION]`);
+  node tools/asc.mjs mint   --key <p8> --kid <id> --issuer <uuid> --csr <base64 der> [--type DISTRIBUTION]
+  node tools/asc.mjs cert   --key <p8> --kid <id> --issuer <uuid> --id <certId>`);
 }
 
 function parseArgs(argv) {
@@ -380,6 +381,29 @@ async function mint(args) {
   return 0;
 }
 
+/** Print one certificate's public content, for assembling a .p12 with a key held elsewhere. */
+async function cert(args) {
+  const jwt = sign(args);
+  const id = args.id && args.id !== 'true' ? String(args.id).trim() : '';
+  if (!id) {
+    console.error('pass --id <certificateId>');
+    return 1;
+  }
+
+  const res = await request(`/v1/certificates/${id}`, jwt);
+  if (res.status !== 200) {
+    console.error(explain(res.status, res.body));
+    return 1;
+  }
+
+  const a = res.body?.data?.attributes ?? {};
+  console.log(`${a.certificateType} expires ${a.expirationDate} ${a.displayName ?? a.name ?? ''}`);
+  console.log('---CERT-BEGIN---');
+  console.log(a.certificateContent ?? '');
+  console.log('---CERT-END---');
+  return 0;
+}
+
 async function main() {
   const [command, ...rest] = process.argv.slice(2);
   const args = parseArgs(rest);
@@ -407,6 +431,7 @@ async function main() {
   if (command === 'certs') return certs(credentials);
   if (command === 'revoke') return revoke(credentials);
   if (command === 'mint') return mint({ ...credentials, csr: args.csr, type: args.type });
+  if (command === 'cert') return cert(credentials);
   usage();
   return 1;
 }

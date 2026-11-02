@@ -25,6 +25,10 @@ on:
         description: Base64 DER certificate signing request, to mint a distribution certificate
         required: false
         default: ""
+      cert_id:
+        description: Certificate id whose public certificate to print
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -76,6 +80,16 @@ jobs:
             --issuer "$ASC_ISSUER_ID" \
             --csr "${{ github.event.inputs.csr }}" \
             --type DISTRIBUTION
+
+      - name: Print a certificate
+        if: ${{ github.event.inputs.cert_id != '' }}
+        run: |
+          set -uo pipefail
+          node tools/asc.mjs cert \
+            --key "$KEY_PATH" \
+            --kid "$ASC_KEY_ID" \
+            --issuer "$ASC_ISSUER_ID" \
+            --id "${{ github.event.inputs.cert_id }}"
 
       # Only runs when ids are given, so the default dispatch is a pure listing.
       - name: Revoke the named certificates
