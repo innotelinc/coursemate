@@ -22,8 +22,18 @@ REPO="${CM_REPO:-innotelinc/coursemate}"
 WORKFLOW="${CM_WORKFLOW:-ios-release.yml}"
 REF="${CM_REF:-master}"
 
+# An empty pattern is not "every tag" to git — it is a pattern that matches
+# nothing, which made this report "no version tags" against a repository with
+# two of them. The argument is omitted entirely when there is no filter.
 tags() {
-  git ls-remote --tags --refs "$1" "${2:-}" 2>/dev/null | awk '{print $2}'
+  local url="$1" pattern="${2:-}"
+  {
+    if [ -n "$pattern" ]; then
+      git ls-remote --tags --refs "$url" "$pattern" 2>/dev/null
+    else
+      git ls-remote --tags --refs "$url" 2>/dev/null
+    fi
+  } | awk '{print $2}'
 }
 
 latest=$(tags "https://github.com/$APP_REPO" \
