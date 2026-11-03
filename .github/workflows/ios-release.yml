@@ -9,10 +9,18 @@ on:
   # A tag in the app repository is the release trigger. Its own release.yml
   # cannot sign anything — the App Store Connect key and the distribution
   # identity live here — so this looks for tags that have not been built yet and
-  # releases the newest one. Twenty minutes is short enough that a tag still
-  # feels like a trigger, and long enough that polling costs nothing.
+  # releases the newest one.
+  #
+  # The interval must be longer than a release takes. It was every 20 minutes
+  # while a signed archive, export and TestFlight upload takes roughly 26, so
+  # every tick landed on top of the one before it. The concurrency group below
+  # deliberately does not cancel a running release, which leaves GitHub only one
+  # pending slot: the third arrival silently cancelled the queued one — and when
+  # that queued run was an operator's manual dispatch, the dispatch vanished with
+  # no build and no error. An hour is comfortably longer than a release and still
+  # short enough that a tag feels like a trigger.
   schedule:
-    - cron: "*/20 * * * *"
+    - cron: "17 * * * *"
   workflow_dispatch:
     inputs:
       version:
@@ -25,6 +33,9 @@ permissions:
   # schedule from building the same tag twice.
   contents: write
 
+# One release at a time, never cancelled. A release signs, uploads and then
+# writes the ios-release/<tag> marker; cancelling it midway can leave an upload
+# Apple accepted with no marker, so the next poll uploads the same version again.
 concurrency:
   group: ios-release
   cancel-in-progress: false
