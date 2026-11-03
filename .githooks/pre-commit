@@ -15,6 +15,13 @@
 set -uo pipefail
 
 HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# Secret gate first: blocks the commit when staged added lines carry
+# credential-shaped content (findings block; missing toolchain fails open).
+# Runs as a separate process so its exit path can't short-circuit this hook.
+if ! "$HOOK_DIR/secret-scan.sh"; then
+  exit 1
+fi
 # shellcheck source=.githooks/guard-lib
 # shellcheck disable=SC1091
 source "$HOOK_DIR/guard-lib"
@@ -22,7 +29,9 @@ source "$HOOK_DIR/guard-lib"
 say() { printf 'guard: %s\n' "$*"; }
 
 # Scan only the ADDED lines of the staged diff (never the unchanged context).
-added="$(git diff --cached --no-color -U0 2>/dev/null | grep '^+' | grep -v '^+++' || true)"
+# Strip the '+' diff marker after filtering — the trailer rule is anchored (^),
+# so a leading '+' would hide a foreign credit line from the scan.
+added="$(git diff --cached --no-color -U0 2>/dev/null | grep '^+' | grep -v '^+++' | sed 's/^+//' || true)"
 if [ -n "$added" ]; then
   if ! printf '%s\n' "$added" | guard_check_stream; then
     say "commit blocked: the staged changes introduce attribution to someone other than Darnel Hunter <dhunter@innotel.us>."
